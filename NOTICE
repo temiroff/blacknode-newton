@@ -1,0 +1,10 @@
+blacknode-newton
+Copyright 2026 Blacknode contributors
+
+The bundled assets/so101_robot.usd is derived from the SO-ARM100/SO-101
+robot work by The Robot Studio:
+https://github.com/TheRobotStudio/SO-ARM100
+
+The model is redistributed under the Apache License, Version 2.0. Its source
+project attribution and license must be retained when the asset is modified or
+redistributed.

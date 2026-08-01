@@ -1,0 +1,59 @@
+[package]
+name = "blacknode-newton"
+version = "0.1.0"
+description = "Interactive Newton physics sessions, browser visualization, and safe articulation teleoperation for Blacknode."
+requires-blacknode = ">=0.3.0"
+layer = "simulation"
+component-mode = true
+
+[categories]
+"Newton Simulation" = "#76b900"
+
+[components.runtime]
+description = "Newton USD scene loading, XPBD simulation, and managed articulation control."
+default = true
+capabilities = ["simulation.newton", "simulation.scene", "simulation.articulation"]
+nodes = ["nodes"]
+module-root = true
+node-types = ["NewtonUSDScene", "NewtonViewerConfig", "NewtonSimulation", "NewtonJointCommand"]
+
+[components.runtime.dependencies]
+pip = ["newton[importers]>=1.4,<2"]
+imports = ["newton", "warp", "pxr"]
+
+[components.viewer-viser]
+description = "Interactive browser viewer and teleoperation panel transported by Viser WebSocket."
+default = true
+capabilities = ["simulation.viewer.browser", "simulation.teleoperation"]
+nodes = ["components/viewer-viser/nodes"]
+
+[components.viewer-viser.dependencies]
+pip = ["viser>=1,<2"]
+imports = ["viser"]
+requires = [{ component = "runtime" }]
+
+[components.viewer-ovrtx]
+description = "Optional RTX USD viewer rendered by NVIDIA OVRT and streamed into the Blacknode editor."
+default = false
+capabilities = ["simulation.viewer.browser", "simulation.viewer.rtx", "simulation.sensor-rendering"]
+nodes = ["components/viewer-ovrtx/nodes"]
+
+[components.viewer-ovrtx.dependencies]
+pip = ["ovrtx==0.4.0.346409", "ovstage==0.1.0.346039", "pillow>=10,<13"]
+imports = ["ovrtx", "ovstage", "PIL"]
+requires = [{ component = "runtime" }]
+
+[components.rosbridge]
+description = "Optional ROS 2 JointState bridge over rosbridge WebSocket."
+default = false
+capabilities = ["simulation.ros2", "transport.rosbridge"]
+nodes = ["components/rosbridge/nodes"]
+node-types = ["NewtonROSBridge"]
+
+[components.rosbridge.dependencies]
+pip = ["roslibpy>=2,<3"]
+imports = ["roslibpy"]
+requires = [
+  { component = "runtime" },
+  { package = "blacknode-ros2", component = "rosbridge", version = ">=0.5,<1" },
+]
