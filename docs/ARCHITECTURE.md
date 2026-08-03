@@ -22,7 +22,9 @@ Blacknode workflow
 
 ## Scene contract
 
-`blacknode.newton-scene` resolves a USD asset, root prim, base mode, optional home values, ground configuration, optional rigid bodies, and collision overrides. The runtime inspects revolute and prismatic joints directly from the imported USD and rejects duplicate names or non-finite limits before enabling teleoperation.
+`blacknode.newton-scene` resolves a USD, URDF/Xacro, or MuJoCo MJCF asset, base mode, optional home values, ground configuration, optional rigid bodies, one bounded procedural particle fill, and collision overrides. Native Newton importers build non-USD robot descriptions, then export frame zero to a temporary USD render layer shared by every viewer provider. The runtime inspects revolute and prismatic joints from the imported model and rejects duplicate names or non-finite limits before enabling teleoperation.
+
+Particle fills are expanded into Newton's GPU-friendly grid representation while building the managed session. The contract stores dimensions, physical material settings, display color, and an optional compound container collision proxy instead of persisting thousands of particle records. Validation caps the fill at 100,000 particles and prevents initial overlap. A compound proxy can replace one expensive mesh collider with bounded, invisible boxes attached to the same imported rigid body. XPBD's particle hash grid supplies particle-particle contact, while the imported scene and any compound proxy supply particle-shape contact. Viser maintains one float32 particle buffer with gradient shading and updates only its positions at the viewer's bounded render cadence.
 
 During import, the runtime applies collision APIs to collision-authored meshes on an in-memory USD stage. Closed convex hulls are the default. Paths selected through `convex_decomposition_patterns` use bounded CoACD decomposition when concavity must be retained. Self-collision is an explicit scene option and remains off by default.
 

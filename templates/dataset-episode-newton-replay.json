@@ -1,0 +1,93 @@
+{
+  "kind": "blacknode.workflow",
+  "schema_version": 1,
+  "name": "Replay Dataset Episode in Loaded Newton Robot",
+  "saved_at": "2026-08-01T00:00:00",
+  "entrypoint": {"node_id": "status", "port": "value"},
+  "metadata": {
+    "template": true,
+    "description": "Select a recorded dataset episode, start its synchronized replay publisher, explicitly arm the robot already open in the Newton workspace, and apply named joint poses as the Dataset Browser plays or seeks. This path controls simulation only.",
+    "color": "#76b900",
+    "required_packages": ["blacknode-newton", "blacknode-dataset"],
+    "required_components": [
+      "blacknode-newton/runtime",
+      "blacknode-newton/replay",
+      "blacknode-dataset/recording",
+      "blacknode-dataset/publishing"
+    ]
+  },
+  "node_meta": {
+    "browser": {
+      "id": "browser",
+      "type": "DatasetBrowser",
+      "params": {"root": "", "dataset": {}, "dataset_id": "", "episode_index": 0, "camera": "", "refresh_key": 0},
+      "pos": [60, 100],
+      "inputs": ["trigger", "dataset", "root", "dataset_id", "episode_index", "camera", "refresh_key"],
+      "outputs": ["dataset", "catalog", "episode", "video", "replay_token", "stream", "episode_path", "video_path", "data_path", "report"],
+      "input_types": {"trigger": "Any", "dataset": "Dict", "root": "Text", "dataset_id": "Text", "episode_index": "Int", "camera": "Text", "refresh_key": "Int"},
+      "output_types": {"dataset": "Dict", "catalog": "Dict", "episode": "Dict", "video": "Video", "replay_token": "Text", "stream": "Dict", "episode_path": "Text", "video_path": "Text", "data_path": "Text", "report": "Text"},
+      "input_defaults": {"dataset": {}, "root": "", "dataset_id": "", "episode_index": 0, "camera": "", "refresh_key": 0}
+    },
+    "publisher": {
+      "id": "publisher",
+      "type": "StreamPublisher",
+      "params": {"action": "start", "run_id": "dataset-newton-replay", "stream": {}, "host": "127.0.0.1", "port": 8765, "source": "action", "units": "radians", "fps": 0, "rate": 1.0, "loop": false, "sync_to_browser": true},
+      "pos": [500, 100],
+      "inputs": ["trigger", "action", "run_id", "stream", "host", "port", "source", "units", "fps", "rate", "loop", "sync_to_browser"],
+      "outputs": ["stream_url", "streaming", "clients", "status", "dashboard", "report", "frame_stream"],
+      "input_types": {"trigger": "Any", "action": "Enum", "run_id": "Text", "stream": "Dict", "host": "Text", "port": "Int", "source": "Enum", "units": "Enum", "fps": "Float", "rate": "Float", "loop": "Bool", "sync_to_browser": "Bool"},
+      "output_types": {"stream_url": "Text", "streaming": "Bool", "clients": "Int", "status": "Dict", "dashboard": "Image", "report": "Text", "frame_stream": "Dict"},
+      "input_defaults": {"action": "status", "run_id": "stream", "stream": {}, "host": "127.0.0.1", "port": 8765, "source": "action", "units": "radians", "fps": 0, "rate": 1.0, "loop": true, "sync_to_browser": true},
+      "input_choices": {"action": ["status", "start", "stop"], "source": ["action", "observation", "leader"], "units": ["radians", "degrees"]}
+    },
+    "resume_workspace": {
+      "id": "resume_workspace",
+      "type": "NewtonSimulation",
+      "params": {"action": "resume", "run_id": "__blacknode_newton_workspace__"},
+      "pos": [500, 430],
+      "inputs": ["trigger", "action", "run_id", "scene", "viewer", "device", "fps", "substeps", "solver_iterations", "joint_stiffness", "joint_damping", "joint_drive_overrides", "max_velocity_deg_s", "max_step_deg"],
+      "outputs": ["ok", "running", "armed", "phase", "session", "positions", "rigid_bodies", "viewer_url", "report"],
+      "input_types": {"trigger": "Any", "action": "Enum", "run_id": "Text", "scene": "Dict", "viewer": "Dict", "device": "Text", "fps": "Int", "substeps": "Int", "solver_iterations": "Int", "joint_stiffness": "Float", "joint_damping": "Float", "joint_drive_overrides": "Dict", "max_velocity_deg_s": "Float", "max_step_deg": "Float"},
+      "output_types": {"ok": "Bool", "running": "Bool", "armed": "Bool", "phase": "Text", "session": "Dict", "positions": "Dict", "rigid_bodies": "Dict", "viewer_url": "Text", "report": "Text"},
+      "input_defaults": {"action": "status", "run_id": "newton-scene", "scene": {}, "viewer": {}, "device": "auto", "fps": 60, "substeps": 4, "solver_iterations": 16, "joint_stiffness": 100000000.0, "joint_damping": 100000.0, "joint_drive_overrides": {}, "max_velocity_deg_s": 45.0, "max_step_deg": 2.0},
+      "input_choices": {"action": ["status", "start", "arm", "disarm", "pause", "resume", "reset", "stop"]}
+    },
+    "arm_workspace": {
+      "id": "arm_workspace",
+      "type": "NewtonSimulation",
+      "params": {"action": "arm", "run_id": "__blacknode_newton_workspace__"},
+      "pos": [850, 430],
+      "inputs": ["trigger", "action", "run_id", "scene", "viewer", "device", "fps", "substeps", "solver_iterations", "joint_stiffness", "joint_damping", "joint_drive_overrides", "max_velocity_deg_s", "max_step_deg"],
+      "outputs": ["ok", "running", "armed", "phase", "session", "positions", "rigid_bodies", "viewer_url", "report"],
+      "input_types": {"trigger": "Any", "action": "Enum", "run_id": "Text", "scene": "Dict", "viewer": "Dict", "device": "Text", "fps": "Int", "substeps": "Int", "solver_iterations": "Int", "joint_stiffness": "Float", "joint_damping": "Float", "joint_drive_overrides": "Dict", "max_velocity_deg_s": "Float", "max_step_deg": "Float"},
+      "output_types": {"ok": "Bool", "running": "Bool", "armed": "Bool", "phase": "Text", "session": "Dict", "positions": "Dict", "rigid_bodies": "Dict", "viewer_url": "Text", "report": "Text"},
+      "input_defaults": {"action": "status", "run_id": "newton-scene", "scene": {}, "viewer": {}, "device": "auto", "fps": 60, "substeps": 4, "solver_iterations": 16, "joint_stiffness": 100000000.0, "joint_damping": 100000.0, "joint_drive_overrides": {}, "max_velocity_deg_s": 45.0, "max_step_deg": 2.0},
+      "input_choices": {"action": ["status", "start", "arm", "disarm", "pause", "resume", "reset", "stop"]}
+    },
+    "replay_bridge": {
+      "id": "replay_bridge",
+      "type": "NewtonReplayBridge",
+      "params": {"action": "start", "bridge_id": "dataset-newton-replay", "run_id": "__blacknode_newton_workspace__", "stream_url": "ws://127.0.0.1:8765", "joint_map": {}, "units": "auto", "apply_seek": true, "timeout": 5.0, "command_stale_seconds": 0.5},
+      "pos": [1190, 220],
+      "inputs": ["trigger", "session", "action", "bridge_id", "run_id", "stream_url", "joint_map", "units", "apply_seek", "timeout", "command_stale_seconds"],
+      "outputs": ["ok", "running", "connected", "bridge", "report"],
+      "input_types": {"trigger": "Any", "session": "Dict", "action": "Enum", "bridge_id": "Text", "run_id": "Text", "stream_url": "Text", "joint_map": "Dict", "units": "Enum", "apply_seek": "Bool", "timeout": "Float", "command_stale_seconds": "Float"},
+      "output_types": {"ok": "Bool", "running": "Bool", "connected": "Bool", "bridge": "Dict", "report": "Text"},
+      "input_defaults": {"session": {}, "action": "status", "bridge_id": "dataset-newton-replay", "run_id": "__blacknode_newton_workspace__", "stream_url": "ws://127.0.0.1:8765", "joint_map": {}, "units": "auto", "apply_seek": true, "timeout": 5.0, "command_stale_seconds": 0.5},
+      "input_choices": {"action": ["status", "start", "stop"], "units": ["auto", "radians", "degrees"]}
+    },
+    "status": {
+      "id": "status", "type": "Output", "params": {"label": "Dataset to loaded Newton replay status"}, "pos": [1580, 220],
+      "inputs": ["value"], "outputs": [], "input_types": {"value": "Any"}, "output_types": {}, "input_defaults": {}
+    }
+  },
+  "edges": [
+    {"from": "browser", "from_port": "stream", "to": "publisher", "to_port": "stream"},
+    {"from": "publisher", "from_port": "report", "to": "resume_workspace", "to_port": "trigger"},
+    {"from": "resume_workspace", "from_port": "report", "to": "arm_workspace", "to_port": "trigger"},
+    {"from": "publisher", "from_port": "stream_url", "to": "replay_bridge", "to_port": "stream_url"},
+    {"from": "arm_workspace", "from_port": "report", "to": "replay_bridge", "to_port": "trigger"},
+    {"from": "arm_workspace", "from_port": "session", "to": "replay_bridge", "to_port": "session"},
+    {"from": "replay_bridge", "from_port": "bridge", "to": "status", "to_port": "value"}
+  ]
+}

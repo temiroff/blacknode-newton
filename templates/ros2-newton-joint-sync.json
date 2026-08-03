@@ -1,0 +1,69 @@
+{
+  "kind": "blacknode.workflow",
+  "schema_version": 1,
+  "name": "ROS 2 Newton Joint Sync",
+  "saved_at": "2026-08-01T00:00:00",
+  "entrypoint": {"node_id": "status", "port": "value"},
+  "metadata": {
+    "template": true,
+    "description": "Start a disarmed-by-default Newton scene, explicitly arm simulation-only joint targets, and mirror a ROS 2 JointState stream into corresponding USD articulation joints. Change the bridge direction to newton_to_ros to publish simulation state on the configured output topic.",
+    "color": "#76b900",
+    "required_packages": ["blacknode-newton", "blacknode-ros2"],
+    "required_components": ["blacknode-newton/runtime", "blacknode-newton/rosbridge", "blacknode-ros2/rosbridge"]
+  },
+  "node_meta": {
+    "scene": {
+      "id": "scene", "type": "NewtonUSDScene", "params": {}, "pos": [60, 80],
+      "inputs": ["trigger", "asset_path", "root_path", "fixed_base", "ground_enabled", "ground_height", "self_collisions", "show_colliders", "home_positions", "rigid_bodies", "particle_fill", "convex_decomposition_patterns", "friction_overrides"],
+      "outputs": ["ok", "scene", "report"],
+      "input_types": {"trigger": "Any", "asset_path": "Text", "root_path": "Text", "fixed_base": "Bool", "ground_enabled": "Bool", "ground_height": "Float", "self_collisions": "Bool", "show_colliders": "Bool", "home_positions": "Dict", "rigid_bodies": "List", "particle_fill": "Dict", "convex_decomposition_patterns": "List", "friction_overrides": "Dict"},
+      "output_types": {"ok": "Bool", "scene": "Dict", "report": "Text"},
+      "input_defaults": {"asset_path": "package://blacknode-newton/assets/so101_robot.usd", "root_path": "/so101_new_calib", "fixed_base": true, "ground_enabled": true, "ground_height": 0.0, "self_collisions": false, "show_colliders": false, "home_positions": {}, "rigid_bodies": [], "particle_fill": {}, "convex_decomposition_patterns": [], "friction_overrides": {}}
+    },
+    "viewer": {
+      "id": "viewer", "type": "NewtonViewerConfig", "params": {}, "pos": [60, 410],
+      "inputs": ["trigger", "provider", "port", "label", "background_color", "show_grid", "hdri", "show_hdri_background", "hdri_intensity", "render_fps", "camera_position", "camera_target", "camera_up_axis", "camera_speed"],
+      "outputs": ["ok", "viewer", "viewer_url", "report"],
+      "input_types": {"trigger": "Any", "provider": "Text", "port": "Int", "label": "Text", "background_color": "Text", "show_grid": "Bool", "hdri": "Enum", "show_hdri_background": "Bool", "hdri_intensity": "Float", "render_fps": "Int", "camera_position": "List", "camera_target": "List", "camera_up_axis": "Enum", "camera_speed": "Float"},
+      "output_types": {"ok": "Bool", "viewer": "Dict", "viewer_url": "Text", "report": "Text"},
+      "input_defaults": {"provider": "viser", "port": 8080, "label": "ROS 2 Newton Joint Sync", "background_color": "#6383c5", "show_grid": true, "hdri": "apartment", "show_hdri_background": true, "hdri_intensity": 1.0, "render_fps": 30, "camera_position": [], "camera_target": [], "camera_up_axis": "auto", "camera_speed": 1.0}
+    },
+    "start_simulation": {
+      "id": "start_simulation", "type": "NewtonSimulation", "params": {"action": "start", "run_id": "ros2-newton-sync"}, "pos": [450, 190],
+      "inputs": ["trigger", "action", "run_id", "scene", "viewer", "device", "fps", "substeps", "solver_iterations", "joint_stiffness", "joint_damping", "joint_drive_overrides", "max_velocity_deg_s", "max_step_deg"],
+      "outputs": ["ok", "running", "armed", "phase", "session", "positions", "rigid_bodies", "viewer_url", "report"],
+      "input_types": {"trigger": "Any", "action": "Enum", "run_id": "Text", "scene": "Dict", "viewer": "Dict", "device": "Text", "fps": "Int", "substeps": "Int", "solver_iterations": "Int", "joint_stiffness": "Float", "joint_damping": "Float", "joint_drive_overrides": "Dict", "max_velocity_deg_s": "Float", "max_step_deg": "Float"},
+      "output_types": {"ok": "Bool", "running": "Bool", "armed": "Bool", "phase": "Text", "session": "Dict", "positions": "Dict", "rigid_bodies": "Dict", "viewer_url": "Text", "report": "Text"},
+      "input_defaults": {"action": "status", "run_id": "ros2-newton-sync", "scene": {}, "viewer": {}, "device": "auto", "fps": 60, "substeps": 4, "solver_iterations": 16, "joint_stiffness": 100000000.0, "joint_damping": 100000.0, "joint_drive_overrides": {}, "max_velocity_deg_s": 45.0, "max_step_deg": 2.0}
+    },
+    "arm_simulation": {
+      "id": "arm_simulation", "type": "NewtonSimulation", "params": {"action": "arm", "run_id": "ros2-newton-sync"}, "pos": [780, 190],
+      "inputs": ["trigger", "action", "run_id", "scene", "viewer", "device", "fps", "substeps", "solver_iterations", "joint_stiffness", "joint_damping", "joint_drive_overrides", "max_velocity_deg_s", "max_step_deg"],
+      "outputs": ["ok", "running", "armed", "phase", "session", "positions", "rigid_bodies", "viewer_url", "report"],
+      "input_types": {"trigger": "Any", "action": "Enum", "run_id": "Text", "scene": "Dict", "viewer": "Dict", "device": "Text", "fps": "Int", "substeps": "Int", "solver_iterations": "Int", "joint_stiffness": "Float", "joint_damping": "Float", "joint_drive_overrides": "Dict", "max_velocity_deg_s": "Float", "max_step_deg": "Float"},
+      "output_types": {"ok": "Bool", "running": "Bool", "armed": "Bool", "phase": "Text", "session": "Dict", "positions": "Dict", "rigid_bodies": "Dict", "viewer_url": "Text", "report": "Text"},
+      "input_defaults": {"action": "status", "run_id": "ros2-newton-sync", "scene": {}, "viewer": {}, "device": "auto", "fps": 60, "substeps": 4, "solver_iterations": 16, "joint_stiffness": 100000000.0, "joint_damping": 100000.0, "joint_drive_overrides": {}, "max_velocity_deg_s": 45.0, "max_step_deg": 2.0}
+    },
+    "ros_bridge": {
+      "id": "ros_bridge", "type": "NewtonROSBridge", "params": {"action": "start", "bridge_id": "ros2-newton-sync", "direction": "ros_to_newton", "command_topic": "/joint_states", "state_topic": "/blacknode/newton/joint_states"}, "pos": [1100, 190],
+      "inputs": ["trigger", "session", "action", "bridge_id", "run_id", "host", "port", "state_topic", "command_topic", "direction", "joint_map", "publish_hz", "timeout", "command_stale_seconds"],
+      "outputs": ["ok", "running", "connected", "bridge", "report"],
+      "input_types": {"trigger": "Any", "session": "Dict", "action": "Enum", "bridge_id": "Text", "run_id": "Text", "host": "Text", "port": "Int", "state_topic": "Text", "command_topic": "Text", "direction": "Enum", "joint_map": "Dict", "publish_hz": "Float", "timeout": "Float", "command_stale_seconds": "Float"},
+      "output_types": {"ok": "Bool", "running": "Bool", "connected": "Bool", "bridge": "Dict", "report": "Text"},
+      "input_defaults": {"session": {}, "action": "status", "bridge_id": "newton-rosbridge", "run_id": "newton-scene", "host": "127.0.0.1", "port": 9090, "state_topic": "/blacknode/newton/joint_states", "command_topic": "/blacknode/newton/joint_commands", "direction": "bidirectional", "joint_map": {}, "publish_hz": 30.0, "timeout": 10.0, "command_stale_seconds": 0.5},
+      "input_choices": {"action": ["status", "start", "stop"], "direction": ["bidirectional", "ros_to_newton", "newton_to_ros"]}
+    },
+    "status": {
+      "id": "status", "type": "Output", "params": {"label": "ROS 2 Newton sync status"}, "pos": [1450, 190],
+      "inputs": ["value"], "outputs": [], "input_types": {"value": "Any"}, "output_types": {}, "input_defaults": {}
+    }
+  },
+  "edges": [
+    {"from": "scene", "from_port": "scene", "to": "start_simulation", "to_port": "scene"},
+    {"from": "viewer", "from_port": "viewer", "to": "start_simulation", "to_port": "viewer"},
+    {"from": "start_simulation", "from_port": "report", "to": "arm_simulation", "to_port": "trigger"},
+    {"from": "arm_simulation", "from_port": "report", "to": "ros_bridge", "to_port": "trigger"},
+    {"from": "arm_simulation", "from_port": "session", "to": "ros_bridge", "to_port": "session"},
+    {"from": "ros_bridge", "from_port": "bridge", "to": "status", "to_port": "value"}
+  ]
+}
