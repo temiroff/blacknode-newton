@@ -21,7 +21,7 @@
       "pos": [80, 100],
       "inputs": [
         "trigger", "asset_path", "root_path", "fixed_base", "ground_enabled", "ground_height",
-        "self_collisions", "show_colliders", "home_positions", "rigid_bodies", "convex_decomposition_patterns",
+        "self_collisions", "show_colliders", "home_positions", "rigid_bodies", "particle_fill", "convex_decomposition_patterns",
         "friction_overrides"
       ],
       "outputs": ["ok", "scene", "report"],
@@ -29,7 +29,7 @@
         "trigger": "Any", "asset_path": "Text", "root_path": "Text", "fixed_base": "Bool",
         "ground_enabled": "Bool", "ground_height": "Float", "self_collisions": "Bool",
         "show_colliders": "Bool",
-        "home_positions": "Dict", "rigid_bodies": "List",
+        "home_positions": "Dict", "rigid_bodies": "List", "particle_fill": "Dict",
         "convex_decomposition_patterns": "List", "friction_overrides": "Dict"
       },
       "output_types": {"ok": "Bool", "scene": "Dict", "report": "Text"},
@@ -38,7 +38,7 @@
         "root_path": "/so101_new_calib", "fixed_base": true,
         "ground_enabled": true, "ground_height": 0.0, "self_collisions": false,
         "show_colliders": false,
-        "home_positions": {}, "rigid_bodies": [],
+        "home_positions": {}, "rigid_bodies": [], "particle_fill": {},
         "convex_decomposition_patterns": [], "friction_overrides": {}
       }
     },
@@ -49,22 +49,22 @@
       "pos": [80, 430],
       "inputs": [
         "trigger", "provider", "port", "label", "background_color", "show_grid",
-        "hdri", "show_hdri_background", "hdri_intensity",
+        "hdri", "show_hdri_background", "hdri_intensity", "render_fps",
         "camera_position", "camera_target", "camera_up_axis", "camera_speed"
       ],
       "outputs": ["ok", "viewer", "viewer_url", "report"],
       "input_types": {
         "trigger": "Any", "provider": "Text", "port": "Int", "label": "Text",
         "background_color": "Text", "show_grid": "Bool", "camera_position": "List",
-        "hdri": "Enum", "show_hdri_background": "Bool", "hdri_intensity": "Float",
+        "hdri": "Enum", "show_hdri_background": "Bool", "hdri_intensity": "Float", "render_fps": "Int",
         "camera_target": "List", "camera_up_axis": "Enum", "camera_speed": "Float"
       },
       "output_types": {"ok": "Bool", "viewer": "Dict", "viewer_url": "Text", "report": "Text"},
       "input_defaults": {
         "provider": "viser", "port": 8080,
-        "label": "Blacknode Newton USD Scene", "background_color": "#111827",
-        "show_grid": true, "hdri": "none", "show_hdri_background": true,
-        "hdri_intensity": 1.0, "camera_position": [], "camera_target": [],
+        "label": "Blacknode Newton USD Scene", "background_color": "#6383c5",
+        "show_grid": true, "hdri": "apartment", "show_hdri_background": true,
+        "hdri_intensity": 1.0, "render_fps": 30, "camera_position": [], "camera_target": [],
         "camera_up_axis": "auto", "camera_speed": 1.0
       }
     },

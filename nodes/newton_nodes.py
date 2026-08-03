@@ -17,7 +17,7 @@ _DEFAULT_ASSET = runtime.package_asset_uri("assets/so101_robot.usd")
     name="NewtonUSDScene",
     component="runtime",
     category=_CATEGORY,
-    description="Load a USD scene for Newton physics with inspected articulation joints and optional rigid bodies.",
+    description="Load a USD scene for Newton physics with inspected articulation joints, optional rigid bodies, and a procedural particle fill.",
     inputs={
         "trigger": AnyPort,
         "asset_path": Text(default=_DEFAULT_ASSET),
@@ -29,6 +29,7 @@ _DEFAULT_ASSET = runtime.package_asset_uri("assets/so101_robot.usd")
         "show_colliders": Bool(default=False),
         "home_positions": Dict(default={}),
         "rigid_bodies": List(default=[]),
+        "particle_fill": Dict(default={}),
         "convex_decomposition_patterns": List(default=[]),
         "friction_overrides": Dict(default={}),
     },
@@ -48,6 +49,7 @@ def newton_usd_scene(ctx: dict) -> dict:
             show_colliders=bool(ctx.get("show_colliders", False)),
             home_positions=dict(ctx.get("home_positions") or {}),
             rigid_bodies=list(ctx.get("rigid_bodies") or []),
+            particle_fill=dict(ctx.get("particle_fill") or {}),
             convex_decomposition_patterns=list(ctx.get("convex_decomposition_patterns") or []),
             friction_overrides=dict(ctx.get("friction_overrides") or {}),
         )
@@ -56,7 +58,8 @@ def newton_usd_scene(ctx: dict) -> dict:
             "scene": scene,
             "report": (
                 f"Newton USD scene ready: {scene['asset_path']} at {scene['root_path']}; "
-                f"{len(scene['rigid_bodies'])} added rigid body/bodies"
+                f"{len(scene['rigid_bodies'])} added rigid body/bodies; "
+                f"{int(dict(scene.get('particle_fill') or {}).get('particle_count') or 0)} particles"
             ),
         }
     except Exception as exc:  # noqa: BLE001
@@ -73,14 +76,15 @@ def newton_usd_scene(ctx: dict) -> dict:
         "provider": Text(default="viser"),
         "port": Int(default=8080),
         "label": Text(default="Blacknode Newton Viewer"),
-        "background_color": Text(default="#111827"),
+        "background_color": Text(default="#6383c5"),
         "show_grid": Bool(default=True),
         "hdri": Enum(
             ["none", "apartment", "city", "dawn", "forest", "lobby", "night", "park", "studio", "sunset", "warehouse"],
-            default="none",
+            default="apartment",
         ),
         "show_hdri_background": Bool(default=True),
         "hdri_intensity": Float(default=1.0),
+        "render_fps": Int(default=30),
         "camera_position": List(default=[]),
         "camera_target": List(default=[]),
         "camera_up_axis": Enum(["auto", "X", "Y", "Z"], default="auto"),
@@ -97,7 +101,7 @@ def newton_viewer_config(ctx: dict) -> dict:
     port = int(ctx.get("port") or 8080)
     if not 1024 <= port <= 65535:
         return {"ok": False, "viewer": {}, "viewer_url": "", "report": "viewer port must be between 1024 and 65535"}
-    background_color = str(ctx.get("background_color") or "#111827").strip()
+    background_color = str(ctx.get("background_color") or "#6383c5").strip()
     if (
         len(background_color) != 7
         or not background_color.startswith("#")
@@ -105,7 +109,7 @@ def newton_viewer_config(ctx: dict) -> dict:
     ):
         return {
             "ok": False, "viewer": {}, "viewer_url": "",
-            "report": "background_color must be a six-digit hex color such as #111827",
+            "report": "background_color must be a six-digit hex color such as #6383c5",
         }
 
     def _optional_vec3(name: str) -> list[float]:
@@ -132,17 +136,21 @@ def newton_viewer_config(ctx: dict) -> dict:
         )
         if not math.isfinite(hdri_intensity) or not 0.0 <= hdri_intensity <= 10.0:
             raise ValueError("hdri_intensity must be finite and between 0 and 10")
+        render_fps = int(ctx.get("render_fps") or 30)
+        if not 1 <= render_fps <= 60:
+            raise ValueError("render_fps must be between 1 and 60")
     except (TypeError, ValueError) as exc:
         return {"ok": False, "viewer": {}, "viewer_url": "", "report": str(exc)}
 
     camera_up_axis = str(ctx.get("camera_up_axis") or "auto").lower()
-    hdri = str(ctx.get("hdri") or "none").strip().lower()
+    hdri = str(ctx.get("hdri") or "apartment").strip().lower()
     viewer = {
         "kind": "blacknode.newton-viewer", "schema_version": 1,
         "provider": provider, "host": "0.0.0.0", "port": port,
         "label": str(ctx.get("label") or "Blacknode Newton Viewer"),
         "background_color": background_color.lower(),
         "show_grid": bool(ctx.get("show_grid", True)),
+        "render_fps": render_fps,
         "environment": {
             "hdri": hdri,
             "show_background": bool(ctx.get("show_hdri_background", True)),

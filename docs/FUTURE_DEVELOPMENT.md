@@ -23,6 +23,27 @@ OVUI should be evaluated for editor embedding, richer scene inspection, gizmos, 
 
 OVUI evaluation should reuse the current provider contract and OVRT renderer rather than coupling application chrome to NewtonSession. Qualification must determine whether OVUI can replace the current small HTTP surface while preserving editor attach/float behavior and headless operation.
 
+## Implemented Digital Twin diagnostics baseline
+
+ROS and Dataset Replay joint observations now feed a transport-neutral live comparison in the managed Newton session. The editor shows freshness, source latency, per-joint error, and a bounded maximum/RMS trace while preserving the explicit motion safety gate. Both viewer providers render the reference articulation as a translucent ghost with beside, overlay, custom-offset, and hidden modes. A one-shot synchronization control can copy a fresh reference pose into Newton through the existing simulation arm, stale-data, rate, and joint-limit gates; it cannot command physical hardware. Operators can persist the trace as a typed `blacknode.newton-run-artifact` and overlay a compatible saved run as a read-only baseline. Full synchronized sensor observations, long-duration chunked recording, and deterministic action replay remain in the recording milestone below.
+
+## Tracked feature checklist
+
+Last reviewed: 2026-08-01.
+
+| # | Feature | Status | Shipped checkpoint | Work left |
+|---:|---|---|---|---|
+| 1 | Real-vs-sim comparison | **Complete** | Live translucent articulation ghost, per-joint error, latency and stale warnings, bounded traces, saved baselines, placement controls, and guarded one-shot Newton synchronization. | Extend only if synchronized camera/sensor comparison is desired. |
+| 2 | Pose and trajectory editor | **Partial** | Dataset episode play/seek drives the loaded articulation; command ramping and tracking traces are visible. | Pose library, keyframes, editable timeline, looping, and export to dataset episodes or ROS command artifacts. |
+| 3 | End-effector IK control | **Planned** | Viewport selection and translate/rotate/scale gizmos provide the interaction foundation. | IK solver contract, end-effector target gizmo, limits/collision handling, and a separately armed physical-controller path. |
+| 4 | Full episode recording | **Partial** | Joint/reference trace artifacts and Blacknode Dataset recording infrastructure exist. | One synchronized Newton record containing commands, joint states, RGB, depth, segmentation, object poses, collisions, contacts, and timestamps. |
+| 5 | Rich replay | **Partial** | Dataset action/observation/leader joint replay, timeline seeking, unit conversion, joint mapping, and stale safety are implemented. | Moving objects, cameras, gripper state, contact events, and recorded perception frames. |
+| 6 | Contact and force debugging | **Partial** | Collision geometry visibility, rigid-body mass, inertia diagonal, and joint tracking/dynamics diagnostics are available. | Contact points, normals, impulses, friction direction, joint torque, force/torque sensors, center of mass, and inertia-tensor overlays. |
+| 7 | Physics editor | **Partial** | Static/dynamic setup, generated/normalized colliders, scene friction configuration, gravity-backed simulation, joint stiffness/damping, motion rate, substeps, and solver iterations are supported. | Live per-object mass/density/friction/restitution/collider/group/gravity/solver editing and complete rigid/static toggles. |
+| 8 | Scenario testing | **Planned** | Deterministic session controls and artifact infrastructure are in place. | Declarative grasp/lift/hold/collision assertions, repeatable resets, pass/fail reports, and traces. |
+| 9 | Domain randomization | **Planned** | Materials, environment/HDRI, camera, object transforms, mass, and friction already have runtime representations. | Seeded distributions, batch sampling, sensor noise, reproducibility metadata, and dataset integration. |
+| 10 | Headless batch simulation and RL | **Planned** | Viewer-independent session and provider boundaries are suitable foundations. | Vectorized environments, task/reward/termination contracts, Gymnasium adapter, batch runner, training integration, and checkpoint evaluation. |
+
 ## 2. General scene and robot import
 
 - Add a URDF importer that emits the same generic scene contract as the implemented USD importer.

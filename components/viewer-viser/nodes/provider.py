@@ -9,6 +9,14 @@ from typing import Any
 from blacknode.pkg.blacknode_newton.viewer_contract import register_viewer
 
 
+def _viser_hdri(value: Any) -> str:
+    hdri = str(value or "none").lower()
+    return hdri if hdri in {
+        "none", "apartment", "city", "dawn", "forest", "lobby", "night",
+        "park", "studio", "sunset", "warehouse",
+    } else "none"
+
+
 def _loopback_port_available(port: int) -> bool:
     probe = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     try:
@@ -51,16 +59,36 @@ class ViserTeleoperationViewer:
             verbose=False,
             share=False,
         )
+        self._simulation_layer = "simulation"
+        self._reference_layer = "real_reference"
+        self._reference_options: dict[str, Any] = {}
+        self._ghost_batch_masks: dict[str, Any] = {}
+        self._viewer.activate(self._simulation_layer)
+        self._viewer.show_visual = bool(config.get("show_visuals", True))
+        self._viewer.show_collision = bool(config.get("show_colliders", False))
+        self._viewer.show_particles = bool(getattr(model, "particle_count", 0))
         self._viewer.set_model(model)
-        self._background_rgb = self._parse_color(str(config.get("background_color") or "#111827"))
+        self._viewer.activate(self._reference_layer)
+        self._viewer.show_visual = True
+        self._viewer.show_collision = False
+        self._viewer.show_particles = False
+        self._viewer.show_static = False
+        self._viewer.set_model(model)
+        self._viewer.set_layer_visible(self._reference_layer, False)
+        self._prepare_reference_layer(model)
+        self._viewer.activate(self._simulation_layer)
+        self._background_rgb = self._parse_color(str(config.get("background_color") or "#6383c5"))
         self._grid_visible = bool(config.get("show_grid", True))
         environment = dict(config.get("environment") or {})
-        self._hdri = str(environment.get("hdri") or "none").lower()
+        self._hdri = _viser_hdri(environment.get("hdri"))
+        self._hdri_enabled = bool(environment.get("hdri_enabled", True))
         self._show_hdri_background = bool(environment.get("show_background", True))
         self._hdri_intensity = float(environment.get("intensity", 1.0))
         self._plane_signatures: dict[str, tuple[Any, ...]] = {}
         self._plane_rebuild_counts: dict[str, int] = {}
         self._install_grid_filter()
+        self._install_reference_style()
+        self._install_particle_shader()
         camera = dict(config.get("camera") or {})
         self._camera_up_axis = str(camera.get("up_axis") or "auto").lower()
         self._viewer.camera_speed = float(camera.get("speed_m_s") or 1.0)
@@ -230,7 +258,7 @@ class ViserTeleoperationViewer:
         self._viewer._server.scene.set_background_image(image, format="png")
 
     def _apply_environment(self) -> None:
-        hdri = None if self._hdri == "none" else self._hdri
+        hdri = None if self._hdri == "none" or not self._hdri_enabled else self._hdri
         show_background = hdri is not None and self._show_hdri_background
         self._viewer._server.scene.configure_environment_map(
             hdri,
@@ -285,6 +313,117 @@ class ViserTeleoperationViewer:
         self._viewer._log_plane_instances = types.MethodType(
             _log_plane_instances, self._viewer
         )
+
+    def _prepare_reference_layer(self, model: Any) -> None:
+        import numpy as np
+
+        robot_bodies = set(getattr(self.session, "articulation_body_indices", set()) or set())
+        shape_bodies = model.shape_body.numpy().tolist()
+        for batch in self._viewer._shape_instances.values():
+            qualified = str(batch.name)
+            self._ghost_batch_masks[qualified] = np.asarray(
+                [
+                    1.0 if int(shape_bodies[int(shape_index)]) in robot_bodies else 0.0
+                    for shape_index in batch.model_shapes
+                ],
+                dtype=np.float32,
+            )
+        # Ghosts use a uniform diagnostic material rather than duplicating
+        # source textures, which keeps opacity available for every mesh batch.
+        for mesh in self._viewer._meshes.values():
+            mesh["texture"] = None
+            mesh["trimesh"] = None
+
+    def _install_reference_style(self) -> None:
+        original = self._viewer.log_instances
+
+        def _log_instances(
+            viewer: Any,
+            name: str,
+            mesh: str,
+            xforms: Any,
+            scales: Any,
+            colors: Any,
+            materials: Any,
+            hidden: bool = False,
+        ) -> None:
+            original(name, mesh, xforms, scales, colors, materials, hidden=hidden)
+            if viewer._active_layer_id != self._reference_layer or hidden:
+                return
+            import numpy as np
+
+            qualified = viewer._qualify(name)
+            handle = viewer._scene_handles.get(qualified)
+            mask = self._ghost_batch_masks.get(qualified)
+            if handle is None or mask is None:
+                return
+            color = list(self._reference_options.get("color_rgb") or [0.18, 0.86, 1.0])
+            opacity = float(self._reference_options.get("opacity") or 0.28)
+            count = len(mask)
+            if hasattr(handle, "batched_colors"):
+                handle.batched_colors = np.tile(
+                    np.asarray(color, dtype=np.float32).clip(0.0, 1.0) * 255.0,
+                    (count, 1),
+                ).astype(np.uint8)
+            if hasattr(handle, "batched_opacities"):
+                handle.batched_opacities = mask * max(0.05, min(0.95, opacity))
+            if hasattr(handle, "cast_shadow"):
+                handle.cast_shadow = False
+
+        self._viewer.log_instances = types.MethodType(_log_instances, self._viewer)
+
+    def _install_particle_shader(self) -> None:
+        """Render grains through one stable, shaded float32 point buffer."""
+        original = self._viewer.log_points
+        particle_path = f"/layers/{self._simulation_layer}/model/particles"
+        fill = dict(self.session.scene.get("particle_fill") or {})
+        base_color = list(fill.get("color_rgb") or [0.82, 0.58, 0.18])
+
+        def _log_points(
+            viewer: Any,
+            name: str,
+            points: Any,
+            radii: Any = None,
+            colors: Any = None,
+            hidden: bool = False,
+        ) -> None:
+            qualified = viewer._qualify(name)
+            if qualified != particle_path:
+                original(name, points, radii, colors, hidden=hidden)
+                return
+
+            import numpy as np
+
+            handle = viewer._scene_handles.get(qualified)
+            if hidden or points is None:
+                if handle is not None:
+                    handle.visible = False
+                return
+            positions = viewer._to_numpy(points).astype(np.float32, copy=False)
+            if not len(positions):
+                if handle is not None:
+                    handle.visible = False
+                return
+            point_size = float(np.mean(viewer._to_numpy(radii))) if radii is not None else 0.001
+            rgb = np.clip(np.asarray(base_color, dtype=np.float32), 0.0, 1.0)
+            grain_colors = np.tile((rgb * 255.0).astype(np.uint8), (len(positions), 1))
+            if handle is None:
+                handle = viewer._server.scene.add_point_cloud(
+                    name=qualified,
+                    points=positions,
+                    colors=grain_colors,
+                    point_size=point_size,
+                    point_shape="circle",
+                    point_shading="gradient",
+                    precision="float32",
+                )
+                viewer._scene_handles[qualified] = handle
+                return
+            handle.points = positions
+            if not handle.visible:
+                handle.visible = True
+
+        self._viewer.log_points = types.MethodType(_log_points, self._viewer)
 
     def _up_axis_index(self, value: str) -> int:
         return {"x": 0, "y": 1, "z": 2}.get(str(value).lower(), int(self._viewer._get_camera_up_axis()))
@@ -343,7 +482,22 @@ class ViserTeleoperationViewer:
         self._viewer.begin_frame(time_seconds)
 
     def log_state(self, state: Any) -> None:
+        self._viewer.activate(self._simulation_layer)
         self._viewer.log_state(state)
+
+    def log_reference_state(self, state: Any | None, options: dict[str, Any]) -> None:
+        self._reference_options = dict(options)
+        visible = bool(state is not None and options.get("visible", True))
+        self._viewer.set_layer_visible(self._reference_layer, visible)
+        if not visible:
+            self._viewer.activate(self._simulation_layer)
+            return
+        self._viewer.set_layer_transform(
+            self._reference_layer, list(options.get("offset_m") or [0.0, 0.0, 0.0])
+        )
+        self._viewer.activate(self._reference_layer)
+        self._viewer.log_state(state)
+        self._viewer.activate(self._simulation_layer)
 
     def end_frame(self) -> None:
         self._viewer.end_frame()
@@ -359,6 +513,49 @@ class ViserTeleoperationViewer:
             f"**{mode}** · {status['phase']} · frame {status['frame_count']}  \n"
             f"Rigid bodies (m): `{body_text}`"
         )
+
+    def set_visibility(self, path: str, visible: bool) -> bool:
+        # The empty workspace exposes its generated ground as one outliner
+        # object. Viser can update that plane collection in place; imported USD
+        # prims are flattened into Newton shape batches and have no stable prim
+        # path mapping in this provider.
+        if str(path) != "/Blacknode/Ground":
+            return False
+        self._viewer.activate(self._simulation_layer)
+        self._grid_visible = bool(visible)
+        self._set_plane_visibility()
+        return True
+
+    def set_grid(self, visible: bool) -> bool:
+        self._viewer.activate(self._simulation_layer)
+        self._grid_visible = bool(visible)
+        self._set_plane_visibility()
+        return True
+
+    def set_render_options(self, show_visuals: bool, show_colliders: bool) -> bool:
+        self._viewer.activate(self._simulation_layer)
+        self._viewer.show_visual = bool(show_visuals)
+        self._viewer.show_collision = bool(show_colliders)
+        return True
+
+    def set_transform(self, path: str, transform: dict[str, Any]) -> bool:
+        del path, transform
+        return False
+
+    def set_material(self, path: str, material_path: str, material: dict[str, Any]) -> bool:
+        del path, material_path, material
+        return False
+
+    def set_environment(self, environment: dict[str, Any]) -> bool:
+        self._background_rgb = self._parse_color(
+            str(environment.get("background_color") or "#6383c5")
+        )
+        self._hdri = _viser_hdri(environment.get("hdri"))
+        self._hdri_enabled = bool(environment.get("hdri_enabled", True))
+        self._show_hdri_background = bool(environment.get("show_background", True))
+        self._hdri_intensity = float(environment.get("intensity", 1.0))
+        self._apply_environment()
+        return True
 
     def close(self) -> None:
         self._viewer.close()

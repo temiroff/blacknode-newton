@@ -1,0 +1,224 @@
+{
+  "kind": "blacknode.workflow",
+  "schema_version": 1,
+  "name": "SO-101 Grain Spill Demo",
+  "saved_at": "2026-08-02T00:00:00",
+  "entrypoint": {
+    "node_id": "viewer_url",
+    "port": "value"
+  },
+  "metadata": {
+    "template": true,
+    "description": "Teleoperate the bundled SO-101 tabletop scene with 3,240 Newton XPBD grains inside the green container.",
+    "color": "#d9a441",
+    "required_packages": ["blacknode-newton"],
+    "required_components": ["blacknode-newton/runtime", "blacknode-newton/viewer-viser"]
+  },
+  "node_meta": {
+    "scene": {
+      "id": "scene",
+      "type": "NewtonUSDScene",
+      "params": {
+        "asset_path": "package://blacknode-newton/assets/scenes/so101_tabletop.usd",
+        "root_path": "/so101_new_calib",
+        "fixed_base": true,
+        "ground_enabled": false,
+        "ground_height": 0.0,
+        "self_collisions": false,
+        "show_colliders": false,
+        "home_positions": {},
+        "rigid_bodies": [],
+        "particle_fill": {
+          "name": "green_container_grain",
+          "position_m": [0.303375, 0.096121, 0.006],
+          "dimensions": [18, 18, 10],
+          "spacing_m": [0.00208, 0.00208, 0.00208],
+          "radius_m": 0.001,
+          "mass_kg": 0.0000032,
+          "jitter_m": 0.00005,
+          "friction": 0.55,
+          "cohesion": 0.0,
+          "adhesion": 0.0,
+          "max_velocity_m_s": 3.0,
+          "color_rgb": [0.82, 0.58, 0.18],
+          "container_collision_proxy": {
+            "body_path": "/so101_new_calib/env/green_container",
+            "source_shape_path": "/so101_new_calib/env/green_container/green_container",
+            "friction": 0.55,
+            "boxes": [
+              {"position_m": [0.0, 0.0, -0.01237], "size_m": [0.046, 0.046, 0.005]},
+              {"position_m": [-0.02445, 0.0, 0.0], "size_m": [0.00315, 0.046, 0.02975]},
+              {"position_m": [0.02445, 0.0, 0.0], "size_m": [0.00315, 0.046, 0.02975]},
+              {"position_m": [0.0, -0.02445, 0.0], "size_m": [0.046, 0.00315, 0.02975]},
+              {"position_m": [0.0, 0.02445, 0.0], "size_m": [0.046, 0.00315, 0.02975]}
+            ]
+          }
+        },
+        "convex_decomposition_patterns": [],
+        "friction_overrides": {
+          "/green_container/": 0.55,
+          "/table_": 0.45
+        }
+      },
+      "pos": [70, 90],
+      "inputs": [
+        "trigger", "asset_path", "root_path", "fixed_base", "ground_enabled", "ground_height",
+        "self_collisions", "show_colliders", "home_positions", "rigid_bodies", "particle_fill",
+        "convex_decomposition_patterns", "friction_overrides"
+      ],
+      "outputs": ["ok", "scene", "report"],
+      "input_types": {
+        "trigger": "Any", "asset_path": "Text", "root_path": "Text", "fixed_base": "Bool",
+        "ground_enabled": "Bool", "ground_height": "Float", "self_collisions": "Bool",
+        "show_colliders": "Bool", "home_positions": "Dict", "rigid_bodies": "List",
+        "particle_fill": "Dict", "convex_decomposition_patterns": "List",
+        "friction_overrides": "Dict"
+      },
+      "output_types": {"ok": "Bool", "scene": "Dict", "report": "Text"},
+      "input_defaults": {
+        "asset_path": "package://blacknode-newton/assets/so101_robot.usd",
+        "root_path": "/",
+        "fixed_base": true,
+        "ground_enabled": true,
+        "ground_height": 0.0,
+        "self_collisions": false,
+        "show_colliders": false,
+        "home_positions": {},
+        "rigid_bodies": [],
+        "particle_fill": {},
+        "convex_decomposition_patterns": [],
+        "friction_overrides": {}
+      }
+    },
+    "viewer": {
+      "id": "viewer",
+      "type": "NewtonViewerConfig",
+      "params": {
+        "provider": "viser",
+        "port": 8080,
+        "label": "SO-101 Grain Spill Demo",
+        "background_color": "#6383c5",
+        "show_grid": false,
+        "hdri": "apartment",
+        "show_hdri_background": true,
+        "hdri_intensity": 1.0,
+        "render_fps": 20,
+        "camera_position": [0.7, 0.75, 0.42],
+        "camera_target": [0.2, 0.02, 0.08],
+        "camera_up_axis": "Z",
+        "camera_speed": 0.6
+      },
+      "pos": [70, 580],
+      "inputs": [
+        "trigger", "provider", "port", "label", "background_color", "show_grid",
+        "hdri", "show_hdri_background", "hdri_intensity", "render_fps", "camera_position",
+        "camera_target", "camera_up_axis", "camera_speed"
+      ],
+      "outputs": ["ok", "viewer", "viewer_url", "report"],
+      "input_types": {
+        "trigger": "Any", "provider": "Text", "port": "Int", "label": "Text",
+        "background_color": "Text", "show_grid": "Bool", "hdri": "Enum",
+        "show_hdri_background": "Bool", "hdri_intensity": "Float", "render_fps": "Int",
+        "camera_position": "List", "camera_target": "List", "camera_up_axis": "Enum",
+        "camera_speed": "Float"
+      },
+      "output_types": {"ok": "Bool", "viewer": "Dict", "viewer_url": "Text", "report": "Text"},
+      "input_defaults": {
+        "provider": "viser",
+        "port": 8080,
+        "label": "Blacknode Newton Viewer",
+        "background_color": "#6383c5",
+        "show_grid": true,
+        "hdri": "apartment",
+        "show_hdri_background": true,
+        "hdri_intensity": 1.0,
+        "render_fps": 30,
+        "camera_position": [],
+        "camera_target": [],
+        "camera_up_axis": "auto",
+        "camera_speed": 1.0
+      }
+    },
+    "simulation": {
+      "id": "simulation",
+      "type": "NewtonSimulation",
+      "params": {
+        "action": "start",
+        "run_id": "so101-grain-spill-demo",
+        "device": "cuda:0",
+        "fps": 24,
+        "substeps": 8,
+        "solver_iterations": 4,
+        "joint_stiffness": 100000000.0,
+        "joint_damping": 100000.0,
+        "joint_drive_overrides": {},
+        "max_velocity_deg_s": 45.0,
+        "max_step_deg": 2.0
+      },
+      "pos": [530, 300],
+      "inputs": [
+        "trigger", "action", "run_id", "scene", "viewer", "device", "fps", "substeps",
+        "solver_iterations", "joint_stiffness", "joint_damping", "joint_drive_overrides",
+        "max_velocity_deg_s", "max_step_deg"
+      ],
+      "outputs": [
+        "ok", "running", "armed", "phase", "session", "positions", "rigid_bodies",
+        "viewer_url", "report"
+      ],
+      "input_types": {
+        "trigger": "Any", "action": "Enum", "run_id": "Text", "scene": "Dict",
+        "viewer": "Dict", "device": "Text", "fps": "Int", "substeps": "Int",
+        "solver_iterations": "Int", "joint_stiffness": "Float", "joint_damping": "Float",
+        "joint_drive_overrides": "Dict", "max_velocity_deg_s": "Float", "max_step_deg": "Float"
+      },
+      "output_types": {
+        "ok": "Bool", "running": "Bool", "armed": "Bool", "phase": "Text",
+        "session": "Dict", "positions": "Dict", "rigid_bodies": "Dict",
+        "viewer_url": "Text", "report": "Text"
+      },
+      "input_defaults": {
+        "action": "status",
+        "run_id": "so101-grain-spill-demo",
+        "scene": {},
+        "viewer": {},
+        "device": "auto",
+        "fps": 60,
+        "substeps": 4,
+        "solver_iterations": 16,
+        "joint_stiffness": 100000000.0,
+        "joint_damping": 100000.0,
+        "joint_drive_overrides": {},
+        "max_velocity_deg_s": 45.0,
+        "max_step_deg": 2.0
+      }
+    },
+    "viewer_url": {
+      "id": "viewer_url",
+      "type": "Output",
+      "params": {"label": "Grain Demo Viewer URL"},
+      "pos": [970, 230],
+      "inputs": ["value"],
+      "outputs": [],
+      "input_types": {"value": "Any"},
+      "output_types": {},
+      "input_defaults": {}
+    },
+    "status": {
+      "id": "status",
+      "type": "Output",
+      "params": {"label": "Grain Demo Status"},
+      "pos": [970, 430],
+      "inputs": ["value"],
+      "outputs": [],
+      "input_types": {"value": "Any"},
+      "output_types": {},
+      "input_defaults": {}
+    }
+  },
+  "edges": [
+    {"from": "scene", "from_port": "scene", "to": "simulation", "to_port": "scene"},
+    {"from": "viewer", "from_port": "viewer", "to": "simulation", "to_port": "viewer"},
+    {"from": "simulation", "from_port": "viewer_url", "to": "viewer_url", "to_port": "value"},
+    {"from": "simulation", "from_port": "session", "to": "status", "to_port": "value"}
+  ]
+}
