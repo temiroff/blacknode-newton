@@ -1,6 +1,6 @@
 [package]
 name = "blacknode-newton"
-version = "0.1.0"
+version = "0.1.1"
 description = "Interactive Newton physics sessions, browser visualization, and safe articulation teleoperation for Blacknode."
 requires-blacknode = ">=0.3.0"
 layer = "simulation"
@@ -15,11 +15,11 @@ default = true
 capabilities = ["simulation.newton", "simulation.scene", "simulation.articulation"]
 nodes = ["nodes"]
 module-root = true
-node-types = ["NewtonUSDScene", "NewtonViewerConfig", "NewtonSimulation", "NewtonJointCommand"]
+node-types = ["NewtonUSDScene", "NewtonViewerConfig", "NewtonSimulation", "NewtonJointCommand", "SO101ReachTask"]
 
 [components.runtime.dependencies]
-pip = ["newton[importers]>=1.4,<2", "xacro>=2.1,<3"]
-imports = ["newton", "warp", "pxr", "xacro"]
+pip = ["newton[importers,sim]>=1.4,<2", "xacro>=2.1,<3"]
+imports = ["newton", "warp", "pxr", "xacro", "mujoco", "mujoco_warp"]
 
 [components.viewer-viser]
 description = "Interactive browser viewer and teleoperation panel transported by Viser WebSocket."
