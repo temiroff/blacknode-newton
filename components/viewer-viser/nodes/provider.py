@@ -4,6 +4,7 @@ from __future__ import annotations
 import math
 import socket
 import types
+from collections import deque
 from typing import Any
 
 from blacknode.pkg.blacknode_newton.viewer_contract import register_viewer
@@ -561,7 +562,193 @@ class ViserTeleoperationViewer:
         self._viewer.close()
 
 
-def _factory(session: Any, model: Any, config: dict[str, Any]) -> ViserTeleoperationViewer:
+class ViserTrainingViewer:
+    """Read-only view of one sampled articulation from a batched RL job."""
+
+    def __init__(self, environment: Any, model: Any, config: dict[str, Any]) -> None:
+        try:
+            import numpy as np
+            from newton.viewer import ViewerViser
+        except Exception as exc:  # pragma: no cover - package health catches this
+            raise RuntimeError("Newton's Viser viewer and viser>=1 are required") from exc
+        self._np = np
+        self.environment = environment
+        self.requested_port = int(config.get("port") or 8091)
+        self.port = _select_viewer_port(self.requested_port)
+        self._viewer = ViewerViser(
+            port=self.port,
+            label=str(config.get("label") or "SO-ARM101 PPO Training"),
+            verbose=False,
+            share=False,
+        )
+        self._viewer.show_visual = bool(config.get("show_visuals", True))
+        self._viewer.show_collision = False
+        self._viewer.show_particles = False
+        self._viewer.set_model(model)
+        server = self._viewer._server
+        background = ViserTeleoperationViewer._parse_color(
+            str(config.get("background_color") or "#111827")
+        )
+        image = np.empty((2, 2, 3), dtype=np.uint8)
+        image[:, :] = background
+        server.scene.set_background_image(image, format="png")
+        self._grid = server.scene.add_grid(
+            "/blacknode_training/grid", width=1.4, height=1.4, plane="xy",
+            cell_size=0.05, section_size=0.25, cell_color=(80, 92, 115),
+            section_color=(129, 140, 166), plane_opacity=0.04,
+        )
+        self._target = server.scene.add_icosphere(
+            "/blacknode_training/target", radius=0.025, color=(34, 197, 94),
+            subdivisions=2, material="toon3", cast_shadow=False,
+        )
+        self._trail = server.scene.add_line_segments(
+            "/blacknode_training/end_effector_trail",
+            points=np.empty((0, 2, 3), dtype=np.float32),
+            colors=(251, 146, 60), line_width=3.0,
+        )
+        self._trail_points: deque[tuple[float, float, float]] = deque(maxlen=240)
+        self._last_target: tuple[float, float, float] | None = None
+        self._show_trail = True
+        self._show_target = True
+        self._set_camera()
+        gui = server.gui
+        self._status = gui.add_markdown(
+            "**PPO starting** · sampled simulation only · physical motion disarmed"
+        )
+        with gui.add_folder("Training preview"):
+            environment_index = gui.add_slider(
+                "Environment index", min=0,
+                max=max(0, int(environment.environment_count) - 1), step=1,
+                initial_value=int(environment.preview_environment_index),
+            )
+            show_target = gui.add_checkbox("Show target", initial_value=True)
+            show_trail = gui.add_checkbox("Show end-effector trail", initial_value=True)
+            reset_camera = gui.add_button("Frame SO-ARM101")
+
+        @environment_index.on_update
+        def _environment_changed(event: Any) -> None:
+            environment.set_preview_environment(int(event.target.value))
+            self._trail_points.clear()
+            self._last_target = None
+
+        @show_target.on_update
+        def _target_changed(event: Any) -> None:
+            self._show_target = bool(event.target.value)
+            self._target.visible = self._show_target
+
+        @show_trail.on_update
+        def _trail_changed(event: Any) -> None:
+            self._show_trail = bool(event.target.value)
+            self._trail.visible = self._show_trail and len(self._trail_points) > 1
+
+        @reset_camera.on_click
+        def _reset_camera(_event: Any) -> None:
+            self._set_camera()
+
+    def _set_camera(self) -> None:
+        np = self._np
+        position = np.asarray((0.72, -0.72, 0.56), dtype=np.float64)
+        target = np.asarray((0.0, 0.0, 0.22), dtype=np.float64)
+        up = np.asarray((0.0, 0.0, 1.0), dtype=np.float64)
+        self._viewer._camera_request = (position, target, up)
+        camera = self._viewer._server.initial_camera
+        camera.position = tuple(position.tolist())
+        camera.look_at = tuple(target.tolist())
+        if hasattr(camera, "up"):
+            camera.up = tuple(up.tolist())
+        else:
+            camera.up_direction = tuple(up.tolist())
+        for client in self._viewer._server.get_clients().values():
+            self._viewer._apply_camera_to_client(client)
+
+    @property
+    def url(self) -> str:
+        return self._viewer.url.replace("localhost", "127.0.0.1")
+
+    def is_running(self) -> bool:
+        return self._viewer.is_running()
+
+    def begin_frame(self, time_seconds: float) -> None:
+        self._viewer.begin_frame(time_seconds)
+
+    def log_state(self, state: Any) -> None:
+        self._viewer.log_state(state)
+
+    def log_training_state(self, state: Any, metadata: dict[str, Any]) -> None:
+        np = self._np
+        self._viewer.log_state(state)
+        target = tuple(float(value) for value in list(metadata.get("target_m") or [])[:3])
+        end_effector = tuple(
+            float(value) for value in list(metadata.get("end_effector_m") or [])[:3]
+        )
+        if len(target) == 3:
+            self._target.position = target
+            self._target.visible = self._show_target
+            if self._last_target is None or max(
+                abs(left - right) for left, right in zip(target, self._last_target)
+            ) > 1e-5:
+                self._trail_points.clear()
+                self._last_target = target
+        if len(end_effector) == 3:
+            if not self._trail_points or max(
+                abs(left - right) for left, right in zip(end_effector, self._trail_points[-1])
+            ) > 1e-5:
+                self._trail_points.append(end_effector)
+        if len(self._trail_points) > 1:
+            points = np.asarray(self._trail_points, dtype=np.float32)
+            self._trail.points = np.stack((points[:-1], points[1:]), axis=1)
+            self._trail.visible = self._show_trail
+        else:
+            self._trail.visible = False
+        success = " · **SUCCESS**" if bool(metadata.get("success")) else ""
+        self._status.content = (
+            f"**SO-ARM101 PPO** · update {int(metadata.get('update') or 0)}/"
+            f"{int(metadata.get('updates') or 0)} · environment "
+            f"{int(metadata.get('environment_index') or 0)}  \n"
+            f"distance `{float(metadata.get('distance_m') or 0.0):.4f} m` · "
+            f"reward `{float(metadata.get('reward') or 0.0):.3f}` · "
+            f"step {int(metadata.get('episode_step') or 0)}{success}  \n"
+            "Sampled Newton/Warp simulation · **physical motion disarmed**"
+        )
+
+    def log_reference_state(self, state: Any | None, options: dict[str, Any]) -> None:
+        del state, options
+
+    def end_frame(self) -> None:
+        self._viewer.end_frame()
+
+    def set_visibility(self, path: str, visible: bool) -> bool:
+        del path, visible
+        return False
+
+    def set_grid(self, visible: bool) -> bool:
+        self._grid.visible = bool(visible)
+        return True
+
+    def set_render_options(self, show_visuals: bool, show_colliders: bool) -> bool:
+        self._viewer.show_visual = bool(show_visuals)
+        self._viewer.show_collision = bool(show_colliders)
+        return True
+
+    def set_transform(self, path: str, transform: dict[str, Any]) -> bool:
+        del path, transform
+        return False
+
+    def set_material(self, path: str, material_path: str, material: dict[str, Any]) -> bool:
+        del path, material_path, material
+        return False
+
+    def set_environment(self, environment: dict[str, Any]) -> bool:
+        del environment
+        return False
+
+    def close(self) -> None:
+        self._viewer.close()
+
+
+def _factory(session: Any, model: Any, config: dict[str, Any]) -> Any:
+    if str(config.get("mode") or "").lower() == "training-preview":
+        return ViserTrainingViewer(session, model, config)
     return ViserTeleoperationViewer(session, model, config)
 
 

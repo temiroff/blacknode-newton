@@ -14,6 +14,7 @@ import unittest
 import urllib.request
 import uuid
 from pathlib import Path
+from types import SimpleNamespace
 from unittest import mock
 
 
@@ -59,6 +60,8 @@ class BlacknodeNewtonContractTests(unittest.TestCase):
         self.assertTrue(self.package.ok, self.package.error)
         manifest = (PACKAGE_ROOT / "blacknode-package.toml").read_text(encoding="utf-8")
         self.assertIn('"opencv-python>=4.10,<6"', manifest)
+        self.assertIn('"newton[importers,sim]>=1.4,<2"', manifest)
+        self.assertIn('"mujoco_warp"', manifest)
         self.assertNotIn("opencv-python-headless", manifest)
         self.assertEqual(self.package.enabled_components, ["runtime", "viewer-viser"])
         self.assertEqual(
@@ -68,6 +71,7 @@ class BlacknodeNewtonContractTests(unittest.TestCase):
                 "NewtonSimulation",
                 "NewtonUSDScene",
                 "NewtonViewerConfig",
+                "SO101ReachTask",
             },
         )
         from blacknode.pkg.blacknode_newton.viewer_contract import available_viewers
@@ -75,6 +79,58 @@ class BlacknodeNewtonContractTests(unittest.TestCase):
         self.assertEqual(available_viewers(), ["viser"])
         self.assertIn("viewer-ovrtx", self.package.components)
         self.assertFalse(self.package.components["viewer-ovrtx"]["enabled"])
+
+    def test_so101_reach_contract_is_simulation_only_and_profile_aligned(self) -> None:
+        from blacknode.pkg.blacknode_newton.rl import ACTION_DIM, OBSERVATION_DIM, environment_spec
+
+        spec = environment_spec(environment_count=32, episode_steps=64)
+        self.assertEqual(spec["kind"], "blacknode.rl-environment")
+        self.assertEqual(spec["robot_profile"], "so_arm101")
+        self.assertEqual(spec["observation"]["dimension"], OBSERVATION_DIM)
+        self.assertEqual(spec["action"]["dimension"], ACTION_DIM)
+        self.assertTrue(spec["safety"]["simulation_only"])
+        self.assertFalse(spec["safety"]["physical_motion_authorized"])
+        result = _NODE_REGISTRY["SO101ReachTask"]({"environment_count": 32, "episode_steps": 64})
+        self.assertIn("32 simulated arms", result["report"])
+        self.assertEqual(result["environment"]["joint_names"], list(spec["joint_names"]))
+
+    def test_so101_auto_device_requires_both_warp_and_torch_cuda(self) -> None:
+        from blacknode.pkg.blacknode_newton.rl import _resolve_compute_device
+
+        class FakeWarp:
+            @staticmethod
+            def is_cuda_available() -> bool:
+                return True
+
+            @staticmethod
+            def get_device(value: str) -> str:
+                return value
+
+        cpu_torch = SimpleNamespace(
+            version=SimpleNamespace(cuda=None),
+            cuda=SimpleNamespace(is_available=lambda: False),
+        )
+        cuda_torch = SimpleNamespace(
+            version=SimpleNamespace(cuda="12.8"),
+            cuda=SimpleNamespace(is_available=lambda: True),
+        )
+
+        self.assertEqual(_resolve_compute_device(cpu_torch, FakeWarp, "auto"), "cpu")
+        self.assertEqual(_resolve_compute_device(cuda_torch, FakeWarp, "auto"), "cuda:0")
+        with self.assertRaisesRegex(RuntimeError, "CPU-only PyTorch"):
+            _resolve_compute_device(cpu_torch, FakeWarp, "cuda")
+
+    def test_viser_training_preview_is_read_only_and_selects_sampled_environment(self) -> None:
+        provider = (
+            PACKAGE_ROOT / "components" / "viewer-viser" / "nodes" / "provider.py"
+        ).read_text(encoding="utf-8")
+        preview = provider.split("class ViserTrainingViewer:", 1)[1].split("def _factory", 1)[0]
+        self.assertIn('"Environment index"', preview)
+        self.assertIn('"Show target"', preview)
+        self.assertIn('"Show end-effector trail"', preview)
+        self.assertIn("physical motion disarmed", preview)
+        self.assertNotIn("Arm joint commands", preview)
+        self.assertIn('config.get("mode")', provider)
 
     def test_normalized_usd_colliders_use_newton_import_map_not_shape_labels(self) -> None:
         from blacknode.pkg.blacknode_newton import runtime
