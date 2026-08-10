@@ -588,6 +588,79 @@ def _state_transforms(state: Any) -> list[list[float]]:
     return body_q.numpy().tolist()
 
 
+def _usd_bound_render_shapes(model: Any, asset_path: str) -> list[dict[str, Any]]:
+    """Build live visual bindings when a lightweight session has no scene inventory."""
+    if not asset_path:
+        return []
+    try:
+        from pxr import Gf, Usd, UsdGeom
+
+        stage = Usd.Stage.Open(asset_path)
+        if stage is None:
+            return []
+        cache = UsdGeom.XformCache(Usd.TimeCode.Default())
+        body_paths = sorted(
+            (
+                (str(label), index)
+                for index, label in enumerate(model.body_label)
+                if str(label).startswith("/")
+                and stage.GetPrimAtPath(str(label)).IsValid()
+            ),
+            key=lambda item: len(item[0]),
+            reverse=True,
+        )
+        body_bind_worlds = {
+            index: cache.GetLocalToWorldTransform(stage.GetPrimAtPath(path))
+            for path, index in body_paths
+        }
+        entries: list[dict[str, Any]] = []
+        for prim in stage.Traverse():
+            if not prim.IsA(UsdGeom.Gprim):
+                continue
+            path = str(prim.GetPath())
+            body_index = next(
+                (
+                    index
+                    for body_path, index in body_paths
+                    if path == body_path or path.startswith(body_path + "/")
+                ),
+                -1,
+            )
+            if body_index < 0:
+                continue
+            lowered = path.lower()
+            collider = "/collisions/" in lowered or "/collision/" in lowered
+            shape_bind_world = cache.GetLocalToWorldTransform(prim)
+            parent = prim.GetParent()
+            render_parent_world = (
+                cache.GetLocalToWorldTransform(parent)
+                if parent and parent.IsValid() and parent.IsA(UsdGeom.Xformable)
+                else Gf.Matrix4d(1.0)
+            )
+            entries.append({
+                "path": path,
+                "source_path": path,
+                "visual": not collider,
+                "collider": collider,
+                "body_index": body_index,
+                "initial_world_matrix": [
+                    float(shape_bind_world[row][column])
+                    for row in range(4) for column in range(4)
+                ],
+                "body_bind_world_matrix": [
+                    float(body_bind_worlds[body_index][row][column])
+                    for row in range(4) for column in range(4)
+                ],
+                "render_parent_world_matrix": [
+                    float(render_parent_world[row][column])
+                    for row in range(4) for column in range(4)
+                ],
+            })
+        return entries
+    except Exception:
+        return []
+
+
 class OVRTViewer:
     """Proxy a live Newton session to an isolated OVRT/OVStage renderer."""
 
@@ -649,6 +722,8 @@ class OVRTViewer:
         except Exception:
             initial_body_transforms = []
         render_shapes = list(getattr(session, "render_shapes", []) or [])
+        if not render_shapes:
+            render_shapes = _usd_bound_render_shapes(model, asset_path)
         collision_wireframes = _collision_wireframes(asset_path, render_shapes)
         self._collision_wireframe_count = len(collision_wireframes)
         worker_config = {

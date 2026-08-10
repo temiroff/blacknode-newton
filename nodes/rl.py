@@ -122,6 +122,34 @@ def _resolve_compute_device(torch: Any, wp: Any, device: str) -> str:
     return str(wp.get_device(requested))
 
 
+class _TrainingPreviewSession:
+    """Adapt an RL environment to the transport-neutral viewer session surface."""
+
+    def __init__(self, environment: Any, state: Any, asset_path: Path) -> None:
+        self.environment = environment
+        self.state_0 = state
+        self.render_asset_path = str(asset_path)
+        self.scene = {
+            "asset_path": str(asset_path),
+            "asset_format": "usd",
+            "ground": {"enabled": True, "height_m": 0.0},
+            "rigid_bodies": [],
+            "workspace_edits": {},
+        }
+        self.render_shapes: list[dict[str, Any]] = []
+        self.scene_items: list[dict[str, Any]] = []
+        self.articulation_body_indices = set(range(int(environment.preview_model.body_count)))
+        self.show_visuals = True
+        self.show_colliders = False
+
+    @property
+    def frame_count(self) -> int:
+        return int(self.environment.preview_frame)
+
+    def __getattr__(self, name: str) -> Any:
+        return getattr(self.environment, name)
+
+
 class SO101ReachEnvironment:
     """Batched SO-ARM101 reach task with Newton dynamics and Torch views.
 
@@ -167,6 +195,7 @@ class SO101ReachEnvironment:
         self.preview_viewer = None
         self.preview_model = None
         self.preview_state = None
+        self.preview_session = None
         self.preview_frame = 0
         self.preview_error = ""
 
@@ -242,6 +271,11 @@ class SO101ReachEnvironment:
             self.preview_model, self.preview_model.joint_q, self.preview_model.joint_qd,
             self.preview_state,
         )
+        self.preview_session = _TrainingPreviewSession(
+            self,
+            self.preview_state,
+            _asset_path(str(self.spec.get("asset_path") or _ASSET_URI)),
+        )
         viewer_config = {
             "mode": "training-preview",
             "port": max(1024, min(65535, int(config.get("port") or 8091))),
@@ -250,7 +284,7 @@ class SO101ReachEnvironment:
             "show_visuals": True,
         }
         self.preview_viewer = create_viewer(
-            str(config.get("provider") or "viser"), self, self.preview_model,
+            str(config.get("provider") or "viser"), self.preview_session, self.preview_model,
             viewer_config,
         )
         self.preview_error = ""
@@ -427,7 +461,35 @@ class SO101ReachEnvironment:
             "finite": finite,
         }
 
-    def close(self) -> None:
+    def release_training_batch(self) -> dict[str, Any]:
+        """Release batched simulation state while preserving the preview viewer.
+
+        PPO training uses a separate one-articulation render model for its
+        preview. Once optimization stops, the replicated training model and
+        its tensors can be released independently so the final visual frame
+        remains available without retaining the full training batch.
+        """
+        preview = self.preview_status()
+        self.template = None
+        self.control = None
+        self.contacts = None
+        self.goal_state = None
+        self.state_0 = None
+        self.state_1 = None
+        self.solver = None
+        self.view = None
+        self.model = None
+        self.lower = None
+        self.upper = None
+        self.mid = None
+        self.half_range = None
+        self.previous_actions = None
+        self.targets = None
+        self.step_counts = None
+        self.previous_distance = None
+        return preview
+
+    def close_preview(self) -> None:
         if self.preview_viewer is not None:
             try:
                 self.preview_viewer.close()
@@ -436,13 +498,11 @@ class SO101ReachEnvironment:
         self.preview_viewer = None
         self.preview_state = None
         self.preview_model = None
-        self.template = None
-        self.control = None
-        self.goal_state = None
-        self.state_0 = None
-        self.state_1 = None
-        self.solver = None
-        self.model = None
+        self.preview_session = None
+
+    def close(self) -> None:
+        self.close_preview()
+        self.release_training_batch()
 
 
 @node(
