@@ -94,6 +94,98 @@ class BlacknodeNewtonContractTests(unittest.TestCase):
         self.assertIn("32 simulated arms", result["report"])
         self.assertEqual(result["environment"]["joint_names"], list(spec["joint_names"]))
 
+    def test_training_batch_release_preserves_lightweight_preview(self) -> None:
+        from blacknode.pkg.blacknode_newton.rl import SO101ReachEnvironment
+
+        class Preview:
+            url = "http://127.0.0.1:8091"
+
+            def __init__(self) -> None:
+                self.closed = False
+
+            def is_running(self) -> bool:
+                return not self.closed
+
+            def close(self) -> None:
+                self.closed = True
+
+        environment = object.__new__(SO101ReachEnvironment)
+        environment.environment_count = 512
+        environment.preview_environment_index = 7
+        environment.preview_frame = 42
+        environment.preview_error = ""
+        environment.preview_viewer = Preview()
+        environment.preview_model = object()
+        environment.preview_state = object()
+        for name in (
+            "template", "control", "contacts", "goal_state", "state_0", "state_1",
+            "solver", "view", "model", "lower", "upper", "mid", "half_range",
+            "previous_actions", "targets", "step_counts", "previous_distance",
+        ):
+            setattr(environment, name, object())
+
+        status = environment.release_training_batch()
+
+        self.assertTrue(status["running"])
+        self.assertEqual(status["viewer_url"], "http://127.0.0.1:8091")
+        self.assertIsNone(environment.model)
+        self.assertIsNotNone(environment.preview_model)
+        environment.close_preview()
+        self.assertTrue(environment.preview_viewer is None)
+        self.assertFalse(status.get("physical_motion_authorized", True))
+
+    def test_training_preview_session_exposes_lightweight_viewer_scene(self) -> None:
+        from blacknode.pkg.blacknode_newton.rl import _TrainingPreviewSession
+
+        environment = SimpleNamespace(
+            preview_frame=12,
+            preview_model=SimpleNamespace(body_count=8),
+            environment_count=512,
+        )
+        state = object()
+        session = _TrainingPreviewSession(
+            environment, state, PACKAGE_ROOT / "assets" / "so101_robot.usd"
+        )
+
+        self.assertIs(session.state_0, state)
+        self.assertEqual(session.frame_count, 12)
+        self.assertEqual(session.environment_count, 512)
+        self.assertEqual(session.articulation_body_indices, set(range(8)))
+        self.assertEqual(session.scene["asset_format"], "usd")
+        self.assertTrue(Path(session.render_asset_path).is_file())
+
+    def test_ovrtx_builds_live_bindings_for_lightweight_usd_sessions(self) -> None:
+        provider_path = (
+            PACKAGE_ROOT / "components" / "viewer-ovrtx" / "nodes" / "provider.py"
+        )
+        spec = importlib.util.spec_from_file_location(
+            "blacknode_newton_ovrtx_training_bindings_test", provider_path
+        )
+        self.assertIsNotNone(spec)
+        self.assertIsNotNone(spec.loader)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        from pxr import Usd, UsdGeom
+
+        with tempfile.TemporaryDirectory() as directory:
+            asset = Path(directory) / "training-preview.usda"
+            stage = Usd.Stage.CreateNew(str(asset))
+            UsdGeom.Xform.Define(stage, "/Robot")
+            UsdGeom.Xform.Define(stage, "/Robot/Link")
+            UsdGeom.Cube.Define(stage, "/Robot/Link/visuals/body")
+            UsdGeom.Cube.Define(stage, "/Robot/Link/collisions/body")
+            stage.GetRootLayer().Save()
+
+            entries = module._usd_bound_render_shapes(
+                SimpleNamespace(body_label=["/Robot/Link"]), str(asset)
+            )
+
+        self.assertEqual(len(entries), 2)
+        self.assertEqual({entry["body_index"] for entry in entries}, {0})
+        self.assertEqual(sum(bool(entry["visual"]) for entry in entries), 1)
+        self.assertEqual(sum(bool(entry["collider"]) for entry in entries), 1)
+        self.assertTrue(all(len(entry["body_bind_world_matrix"]) == 16 for entry in entries))
+
     def test_so101_auto_device_requires_both_warp_and_torch_cuda(self) -> None:
         from blacknode.pkg.blacknode_newton.rl import _resolve_compute_device
 

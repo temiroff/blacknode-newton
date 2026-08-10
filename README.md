@@ -16,6 +16,11 @@ The workflow nodes are `NewtonUSDScene`, `NewtonViewerConfig`,
 `NewtonSimulation`, `NewtonJointCommand`, and `SO101ReachTask`. The reach task
 defines a vectorized, simulation-only SO-ARM101 environment for reinforcement
 learning. Optional transports add `NewtonROSBridge` and `NewtonReplayBridge`.
+After a managed PPO run completes, the sampled training preview can stay open
+while Newton releases the replicated training batch. Checkpoint replay then
+uses a one-arm environment and the same read-only viewer contract. PPO training
+and replay can select either the default Viser provider or the optional OVRTX
+provider.
 
 ## Quick start
 
@@ -40,9 +45,10 @@ Enable `viewer-ovrtx` to expose the optional RTX viewer. It requires a supported
 
 The `blacknode-training` package adds `so101-ppo-training.json`, which connects
 `SO101ReachTask` to managed PPO training, simulation evaluation, and policy
-artifact export. Its optional Viser preview renders one sampled training
-environment with a target marker, end-effector trail, metrics, and environment
-selector while the full batch continues stepping on the training device.
+artifact export. Its preview renders one sampled training environment while
+the full batch continues stepping on the training device. Viser supplies the
+target marker, end-effector trail, metrics, and environment selector; OVRTX
+supplies the RTX-rendered USD view when `viewer-ovrtx` is enabled.
 
 Robot Monitor can also drive a matching Newton articulation from fresh calibrated telemetry. This authorizes simulation only; it never commands the physical robot. Stale or disconnected streams disarm the Newton follower.
 

@@ -701,10 +701,17 @@ class ViserTrainingViewer:
         else:
             self._trail.visible = False
         success = " · **SUCCESS**" if bool(metadata.get("success")) else ""
+        replaying = str(metadata.get("mode") or "").lower() == "replay"
+        progress = (
+            f"checkpoint update {int(metadata.get('update') or 0)} · replay episode "
+            f"{int(metadata.get('replay_episode') or 0)}/"
+            f"{int(metadata.get('replay_episodes') or 0)}"
+            if replaying else
+            f"update {int(metadata.get('update') or 0)}/{int(metadata.get('updates') or 0)} · "
+            f"environment {int(metadata.get('environment_index') or 0)}"
+        )
         self._status.content = (
-            f"**SO-ARM101 PPO** · update {int(metadata.get('update') or 0)}/"
-            f"{int(metadata.get('updates') or 0)} · environment "
-            f"{int(metadata.get('environment_index') or 0)}  \n"
+            f"**SO-ARM101 PPO {'Replay' if replaying else 'Training'}** · {progress}  \n"
             f"distance `{float(metadata.get('distance_m') or 0.0):.4f} m` · "
             f"reward `{float(metadata.get('reward') or 0.0):.3f}` · "
             f"step {int(metadata.get('episode_step') or 0)}{success}  \n"
