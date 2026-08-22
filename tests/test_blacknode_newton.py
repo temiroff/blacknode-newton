@@ -766,6 +766,15 @@ class BlacknodeNewtonContractTests(unittest.TestCase):
         self.assertLess(float(__import__("numpy").linalg.norm(camera.eye - camera.target)), 10.0)
         camera.apply([{"action": "reset"}, {"action": "zoom", "delta": 10.0}])
         self.assertGreater(float(__import__("numpy").linalg.norm(camera.eye - camera.target)), 10.0)
+        self.assertTrue(camera.apply([{
+            "action": "set",
+            "position": [1.0, 2.0, 3.0],
+            "target": [0.0, 0.0, 0.0],
+            "up_vector": [1.0, 0.0, 0.0],
+        }]))
+        self.assertEqual(camera.eye.tolist(), [1.0, 2.0, 3.0])
+        self.assertEqual(camera.target.tolist(), [0.0, 0.0, 0.0])
+        self.assertEqual(camera.up_vector.tolist(), [1.0, 0.0, 0.0])
         self.assertFalse(module._requires_renderer_reset([], []))
         self.assertFalse(module._requires_renderer_reset(
             [{"type": "transform"}], []

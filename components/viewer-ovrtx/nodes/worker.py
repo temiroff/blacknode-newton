@@ -360,12 +360,24 @@ class Handler(BaseHTTPRequestHandler):
                 self._headers(HTTPStatus.NO_CONTENT, "text/plain", 0)
                 return
             action = str(value.get("action") or "")
-            if action not in {"orbit", "pan", "zoom", "reset"}:
+            if action not in {"orbit", "pan", "zoom", "reset", "set"}:
                 raise ValueError("unsupported camera action")
-            clean: dict[str, float | str] = {"action": action}
+            clean: dict[str, Any] = {"action": action}
             for name in ("dx", "dy", "delta"):
                 if name in value:
                     clean[name] = max(-500.0, min(500.0, float(value[name])))
+            if action == "set":
+                for name in ("position", "target", "up_vector"):
+                    if name in value:
+                        vector = [float(item) for item in list(value[name])]
+                        if len(vector) != 3 or not all(math.isfinite(item) for item in vector):
+                            raise ValueError(f"camera {name} requires three finite values")
+                        clean[name] = vector
+                axis = str(value.get("up_axis") or "").lower()
+                if axis:
+                    if axis not in {"x", "y", "z"}:
+                        raise ValueError("camera up_axis must be X, Y, or Z")
+                    clean["up_axis"] = axis
             with STATE.lock:
                 STATE.camera_actions.append(clean)
                 del STATE.camera_actions[:-64]
@@ -419,11 +431,18 @@ def _start_input_reader() -> None:
                     }
             elif kind == "camera":
                 action = str(event.get("action") or "")
-                if action in {"orbit", "pan", "zoom", "reset"}:
-                    clean: dict[str, float | str] = {"action": action}
+                if action in {"orbit", "pan", "zoom", "reset", "set"}:
+                    clean: dict[str, Any] = {"action": action}
                     for name in ("dx", "dy", "delta"):
                         if name in event:
                             clean[name] = float(event[name])
+                    for name in ("position", "target", "up_vector"):
+                        if name in event:
+                            clean[name] = [float(value) for value in list(event[name])]
+                    if "up_axis" in event:
+                        clean["up_axis"] = str(event["up_axis"]).lower()
+                    if "request_id" in event:
+                        clean["request_id"] = int(event["request_id"])
                     with STATE.lock:
                         STATE.camera_actions.append(clean)
                         del STATE.camera_actions[:-64]
@@ -491,7 +510,12 @@ def _matrix_text(values: list[float]) -> str:
     return "(" + ", ".join("(" + ", ".join(f"{value:.12g}" for value in row) + ")" for row in rows) + ")"
 
 
-def _camera_matrix(eye: list[float], target: list[float], up_axis: str) -> list[float]:
+def _camera_matrix(
+    eye: list[float],
+    target: list[float],
+    up_axis: str,
+    up_vector: list[float] | None = None,
+) -> list[float]:
     import numpy as np
 
     eye_array = np.asarray(eye, dtype=np.float64)
@@ -502,8 +526,16 @@ def _camera_matrix(eye: list[float], target: list[float], up_axis: str) -> list[
         forward = np.array([0.0, 0.0, -1.0])
     else:
         forward /= length
-    up = np.zeros(3, dtype=np.float64)
-    up[{"x": 0, "y": 1, "z": 2}.get(up_axis, 2)] = 1.0
+    if up_vector is None:
+        up = np.zeros(3, dtype=np.float64)
+        up[{"x": 0, "y": 1, "z": 2}.get(up_axis, 2)] = 1.0
+    else:
+        up = np.asarray(up_vector, dtype=np.float64)
+        length = float(np.linalg.norm(up))
+        if length < 1.0e-9:
+            up = np.array([0.0, 0.0, 1.0])
+        else:
+            up /= length
     right = np.cross(forward, up)
     if float(np.linalg.norm(right)) < 1.0e-6:
         up = np.array([0.0, 1.0, 0.0])
@@ -1024,9 +1056,29 @@ class Camera:
         self.initial_eye = self.eye.copy()
         self.initial_target = self.target.copy()
         self.up_axis = str(camera.get("up_axis") or "z")
+        self.up_vector = self._normalized_up(camera.get("up_vector") or None)
+        self.initial_up_vector = self.up_vector.copy()
+
+    def _normalized_up(self, value: Any) -> Any:
+        import numpy as np
+
+        if value is None:
+            result = np.zeros(3, dtype=np.float64)
+            result[{"x": 0, "y": 1, "z": 2}.get(self.up_axis, 2)] = 1.0
+            return result
+        result = np.asarray(value, dtype=np.float64)
+        if result.shape != (3,) or not np.isfinite(result).all():
+            raise ValueError("camera up_vector requires three finite values")
+        length = float(np.linalg.norm(result))
+        if length < 1.0e-9:
+            raise ValueError("camera up_vector cannot be zero")
+        return result / length
 
     def matrix(self) -> list[float]:
-        return _camera_matrix(self.eye.tolist(), self.target.tolist(), self.up_axis)
+        return _camera_matrix(
+            self.eye.tolist(), self.target.tolist(), self.up_axis,
+            self.up_vector.tolist(),
+        )
 
     def project(self, point: Any, width: int, height: int) -> list[float] | None:
         """Project a stage-space point to top-left-origin normalized viewport coordinates."""
@@ -1038,8 +1090,7 @@ class Camera:
         if distance < 1.0e-9:
             return None
         forward /= distance
-        world_up = np.zeros(3, dtype=np.float64)
-        world_up[{"x": 0, "y": 1, "z": 2}.get(self.up_axis, 2)] = 1.0
+        world_up = self.up_vector
         right = np.cross(forward, world_up)
         if float(np.linalg.norm(right)) < 1.0e-9:
             return None
@@ -1064,13 +1115,33 @@ class Camera:
             if kind == "reset":
                 self.eye = self.initial_eye.copy()
                 self.target = self.initial_target.copy()
+                self.up_vector = self.initial_up_vector.copy()
+                dirty = True
+                continue
+            if kind == "set":
+                eye = np.asarray(action.get("position"), dtype=np.float64)
+                target = np.asarray(action.get("target"), dtype=np.float64)
+                if (
+                    eye.shape != (3,) or target.shape != (3,)
+                    or not np.isfinite(eye).all() or not np.isfinite(target).all()
+                    or float(np.linalg.norm(target - eye)) < 1.0e-6
+                ):
+                    continue
+                self.eye = eye
+                self.target = target
+                requested_axis = str(action.get("up_axis") or self.up_axis).lower()
+                if requested_axis in {"x", "y", "z"}:
+                    self.up_axis = requested_axis
+                try:
+                    self.up_vector = self._normalized_up(action.get("up_vector"))
+                except ValueError:
+                    continue
                 dirty = True
                 continue
             offset = self.eye - self.target
             distance = max(0.05, float(np.linalg.norm(offset)))
             forward = -offset / distance
-            world_up = np.zeros(3)
-            world_up[{"x": 0, "y": 1, "z": 2}.get(self.up_axis, 2)] = 1.0
+            world_up = self.up_vector
             right = np.cross(forward, world_up)
             if float(np.linalg.norm(right)) < 1.0e-6:
                 continue
@@ -1106,9 +1177,7 @@ class Camera:
 
         forward = self.target - self.eye
         forward /= max(1.0e-12, float(np.linalg.norm(forward)))
-        world_up = np.zeros(3, dtype=np.float64)
-        up_index = {"x": 0, "y": 1, "z": 2}.get(self.up_axis, 2)
-        world_up[up_index] = 1.0
+        world_up = self.up_vector
         right = np.cross(forward, world_up)
         right /= max(1.0e-12, float(np.linalg.norm(right)))
         up = np.cross(right, forward)
@@ -2531,6 +2600,14 @@ def render(config: dict[str, Any]) -> None:
                                             visibility_overrides,
                                         ),
                                     })
+                        camera_request_id = max(
+                            (
+                                int(action.get("request_id") or 0)
+                                for action in actions
+                                if action.get("action") == "set"
+                            ),
+                            default=0,
+                        )
                         camera_dirty = camera.apply(actions)
                         if (
                             camera_dirty
@@ -2858,6 +2935,11 @@ def render(config: dict[str, Any]) -> None:
                         )
                         if jpeg:
                             STATE.publish(jpeg)
+                            if camera_request_id:
+                                _send_event({
+                                    "type": "camera_applied",
+                                    "request_id": camera_request_id,
+                                })
                         if pick_requests:
                             hit = _decode_pick(products, renderer)
                             raw_selected = str(hit.get("path") or "")

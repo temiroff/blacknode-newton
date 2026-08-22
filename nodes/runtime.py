@@ -77,7 +77,7 @@ DEFAULT_GRIP_PAD_SPECS = (
         "rotation_xyzw": [-0.01652895, 0.70359731, 0.01668677, 0.71021068],
         "size_m": [0.043, 0.012, 0.003],
         "margin_m": 0.0001,
-        "friction": 6.0,
+        "friction": 1.2,
     },
     {
         "body_path": "/so101_new_calib/moving_jaw_so101_v1_link",
@@ -86,10 +86,13 @@ DEFAULT_GRIP_PAD_SPECS = (
         ),
         "label": "/__BlacknodeGripPads/moving",
         "position_m": [-0.02814949, -0.06289308, 0.01901818],
-        "rotation_xyzw": [-0.51399684, 0.50934368, -0.48556593, 0.49051198],
+        # Working-pose orientation of the compliant face. The moving jaw pivots
+        # about 20 degrees by a 25 mm grasp; this keeps the effective flat pad
+        # seated on the prop instead of presenting a separating edge.
+        "rotation_xyzw": [-0.42187043, 0.58678212, -0.56744371, 0.39461340],
         "size_m": [0.043, 0.012, 0.003],
         "margin_m": 0.0001,
-        "friction": 6.0,
+        "friction": 1.2,
     },
 )
 WORKSPACE_RUN_ID = "__blacknode_newton_workspace__"
@@ -107,6 +110,7 @@ COLLIDER_DISPLAY_ROOT = "/__BlacknodeColliderDisplay"
 VISUAL_DISPLAY_ROOT = "/__BlacknodeVisualDisplay"
 DIGITAL_TWIN_HISTORY_LIMIT = 240
 DIGITAL_TWIN_HISTORY_INTERVAL_SECONDS = 0.05
+MAX_PHYSICS_SUBSTEPS = 64
 _XACRO_EXPANSION_LOCK = threading.RLock()
 _XACRO_ENVIRONMENT_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 _XACRO_MISSING_ENVIRONMENT = re.compile(
@@ -1564,8 +1568,10 @@ class NewtonSession:
         self.scene = dict(scene)
         self.viewer_config = dict(viewer_config)
         self.device_request = str(device or "auto")
-        self.fps = max(10, min(120, int(fps)))
-        self.substeps = max(1, min(16, int(substeps)))
+        # Contact-sensitive manipulation needs to observe every 500 Hz physics
+        # frame. Rendering remains independently rate-limited below.
+        self.fps = max(10, min(500, int(fps)))
+        self.substeps = max(1, min(MAX_PHYSICS_SUBSTEPS, int(substeps)))
         self.solver_iterations = max(1, min(64, int(solver_iterations)))
         self.joint_stiffness = self._validate_drive_gain("joint_stiffness", joint_stiffness)
         self.joint_damping = self._validate_drive_gain("joint_damping", joint_damping)
@@ -1605,6 +1611,7 @@ class NewtonSession:
         self.digital_twin_baseline: dict[str, Any] = {}
         self.armed = False
         self.paused = False
+        self.pending_steps = 0
         self.phase = "starting"
         self.last_error = ""
         self.viewer: Any = None
@@ -1617,6 +1624,7 @@ class NewtonSession:
         self.rigid_body_indices: dict[str, int] = {}
         self.dynamic_body_indices: set[int] = set()
         self.body_pose_overrides: dict[int, list[float]] = {}
+        self.free_joint_state_starts: dict[int, tuple[int, int]] = {}
         self.authored_dynamic_body_names: list[str] = []
         self.active_collision_shapes = 0
         self.usd_mesh_count = 0
@@ -1785,7 +1793,7 @@ class NewtonSession:
     def _build(self) -> None:
         newton, wp = self._imports()
         try:
-            from pxr import Gf, Usd, UsdGeom, UsdPhysics, UsdShade
+            from pxr import Gf, Sdf, Usd, UsdGeom, UsdPhysics, UsdShade
         except Exception as exc:  # pragma: no cover - declared importer dependency
             raise RuntimeError("OpenUSD Python schemas are required to load USD scenes") from exc
         device = self._resolve_device(wp)
@@ -1800,6 +1808,12 @@ class NewtonSession:
             str(pattern): str(approximation)
             for pattern, approximation in dict(
                 collision_config.get("mesh_approximation_overrides") or {}
+            ).items()
+        }
+        sdf_max_resolution_overrides = {
+            str(pattern): int(resolution)
+            for pattern, resolution in dict(
+                collision_config.get("sdf_max_resolution_overrides") or {}
             ).items()
         }
         mass_overrides = {
@@ -1817,6 +1831,14 @@ class NewtonSession:
         normalized_collision_paths: set[str] = set()
         collision_only_paths: set[str] = set()
         builder = newton.ModelBuilder()
+        if str(self.scene.get("solver") or "xpbd").strip().lower() == "mujoco":
+            newton.solvers.SolverMuJoCo.register_custom_attributes(builder)
+        # Newton 1.5 changed the inherited rigid contact gap to 0.1 m. That
+        # makes ordinary dynamic pairs enter MuJoCo constraints while they are
+        # still up to 20 cm apart, which is catastrophic for tabletop scenes.
+        # Real contact is the runtime default; callers may opt into a small
+        # positive detection envelope explicitly when they actually need one.
+        builder.rigid_gap = float(self.scene.get("rigid_contact_gap_m", 0.0))
         usd_import_result: dict[str, Any] = {}
         collision_proxy_shape_indices: set[int] = set()
         particle_fill = dict(self.scene.get("particle_fill") or {})
@@ -1887,6 +1909,25 @@ class NewtonSession:
                             ),
                         )
                         UsdPhysics.MeshCollisionAPI.Apply(prim).CreateApproximationAttr(approximation)
+                        sdf_resolution = next(
+                            (
+                                value
+                                for pattern, value in sdf_max_resolution_overrides.items()
+                                if pattern in path
+                            ),
+                            None,
+                        )
+                        if sdf_resolution is not None:
+                            if sdf_resolution <= 0 or sdf_resolution % 8 != 0:
+                                raise ValueError(
+                                    "collision.sdf_max_resolution_overrides values must be "
+                                    f"positive multiples of 8; got {sdf_resolution} for {path}"
+                                )
+                            prim.CreateAttribute(
+                                "newton:sdfMaxResolution",
+                                Sdf.ValueTypeNames.Int,
+                                custom=True,
+                            ).Set(sdf_resolution)
                         collision_meshes += 1
                         normalized_collision_paths.add(path)
                 if prim.IsA(UsdGeom.Gprim) and _usd_is_collision_only_prim(
@@ -1918,6 +1959,70 @@ class NewtonSession:
                     force_show_colliders=False,
                     force_position_velocity_actuation=True,
                 )
+                if bool(collision_config.get("split_render_collision_meshes", False)):
+                    # Newton normally shares one indexed Mesh between rendering
+                    # and collision when a USD Gprim has both roles. Collision
+                    # import intentionally welds face-varying vertices, which
+                    # discards authored hard normals and visually rounds cubes,
+                    # tables, and other sharp assets. Keep that original mesh
+                    # collision-only and attach an authored-normal render-only
+                    # copy to the same body and local transform.
+                    visible_bit = int(newton.ShapeFlags.VISIBLE)
+                    collision_bits = int(newton.ShapeFlags.COLLIDE_SHAPES) | int(
+                        newton.ShapeFlags.COLLIDE_PARTICLES
+                    )
+                    original_shape_count = len(builder.shape_label)
+                    for shape_index in range(original_shape_count):
+                        flags = int(builder.shape_flags[shape_index])
+                        if not (flags & visible_bit) or not (flags & collision_bits):
+                            continue
+                        if int(builder.shape_type[shape_index]) != int(newton.GeoType.MESH):
+                            continue
+                        source = builder.shape_source[shape_index]
+                        if not isinstance(source, newton.Mesh):
+                            continue
+                        label = str(builder.shape_label[shape_index])
+                        prim = stage.GetPrimAtPath(label)
+                        if not prim or not prim.IsValid() or not prim.IsA(UsdGeom.Mesh):
+                            continue
+                        authored = newton.usd.get_mesh(
+                            prim,
+                            load_normals=True,
+                            load_uvs=source.texture is not None,
+                            preserve_facevarying_uvs=source.texture is not None,
+                        )
+                        if authored.normals is None:
+                            continue
+                        render_mesh = newton.Mesh(
+                            authored.vertices,
+                            authored.indices,
+                            normals=authored.normals,
+                            uvs=authored.uvs,
+                            compute_inertia=False,
+                            is_solid=source.is_solid,
+                            maxhullvert=source.maxhullvert,
+                            color=source.color,
+                            roughness=source.roughness,
+                            metallic=source.metallic,
+                            texture=source.texture,
+                        )
+                        render_cfg = newton.ModelBuilder.ShapeConfig(
+                            density=0.0,
+                            is_solid=False,
+                            has_shape_collision=False,
+                            has_particle_collision=False,
+                            is_visible=True,
+                        )
+                        builder.add_shape_mesh(
+                            body=int(builder.shape_body[shape_index]),
+                            xform=builder.shape_transform[shape_index],
+                            mesh=render_mesh,
+                            scale=builder.shape_scale[shape_index],
+                            cfg=render_cfg,
+                            color=builder.shape_color[shape_index],
+                            label=f"{label}_authored_render",
+                        )
+                        builder.shape_flags[shape_index] = flags & ~visible_bit
             finally:
                 if display_root and display_root.IsValid():
                     display_root.SetActive(True)
@@ -1955,6 +2060,20 @@ class NewtonSession:
             mjcf_home_qpos = list(self.scene.get("mjcf_home_qpos") or [])
             if mjcf_home_qpos:
                 _apply_mjcf_keyframe_qpos(builder, newton, mjcf_home_qpos)
+        disabled_shape_patterns = [
+            str(value)
+            for value in list(collision_config.get("disable_shape_patterns") or [])
+            if str(value)
+        ]
+        if disabled_shape_patterns:
+            collision_bits = int(newton.ShapeFlags.COLLIDE_SHAPES) | int(
+                newton.ShapeFlags.COLLIDE_PARTICLES
+            )
+            for shape_index, label in enumerate(builder.shape_label):
+                if any(pattern in str(label) for pattern in disabled_shape_patterns):
+                    builder.shape_flags[shape_index] = (
+                        int(builder.shape_flags[shape_index]) & ~collision_bits
+                    )
         for pad in grip_pad_specs:
             body_path = str(pad["body_path"])
             try:
@@ -1992,8 +2111,10 @@ class NewtonSession:
                 density=0.0,
                 mu=float(pad["friction"]),
                 restitution=0.0,
-                mu_torsional=0.1,
-                mu_rolling=0.02,
+                mu_torsional=float(pad.get("torsional_friction_m", 0.006)),
+                mu_rolling=float(pad.get("rolling_friction_m", 0.001)),
+                ke=float(pad.get("contact_stiffness_n_m", 2500.0)),
+                kd=float(pad.get("contact_damping_n_s_m", 100.0)),
                 margin=float(pad["margin_m"]),
                 is_visible=False,
             )
@@ -2058,12 +2179,32 @@ class NewtonSession:
                 builder.shape_flags[shape_index] = (
                     int(builder.shape_flags[shape_index]) & ~collision_bits
                 )
+            source_collision_groups = {
+                int(builder.shape_collision_group[shape_index])
+                for shape_index in source_shape_indices
+            }
+            if len(source_collision_groups) != 1:
+                raise RuntimeError(
+                    f"collision proxy source shapes use different collision groups: "
+                    f"{source_shape_path} -> {sorted(source_collision_groups)}"
+                )
+            source_collision_group = source_collision_groups.pop()
             proxy_cfg = newton.ModelBuilder.ShapeConfig(
                 density=0.0,
                 mu=float(compound_proxy["friction"]),
                 restitution=0.0,
                 mu_torsional=0.05,
                 mu_rolling=0.01,
+                # A replacement collider must preserve the source shape's
+                # collision graph. Assigning the builder default creates a new
+                # group (and can alias MuJoCo's finite contype bitmask), making
+                # the proxy silently stop colliding with a gripper pad.
+                collision_group=source_collision_group,
+                sdf_max_resolution=(
+                    int(compound_proxy["sdf_max_resolution"])
+                    if compound_proxy.get("sdf_max_resolution") is not None
+                    else None
+                ),
                 is_visible=False,
             )
             proxy_shape_indices: list[int] = []
@@ -2098,6 +2239,8 @@ class NewtonSession:
             self.dynamic_body_indices.add(body_index)
             self.authored_dynamic_body_names.append(name)
         friction_overrides = dict(collision_config.get("friction_overrides") or {})
+        stiffness_overrides = dict(collision_config.get("contact_stiffness_overrides") or {})
+        damping_overrides = dict(collision_config.get("contact_damping_overrides") or {})
         for shape_index, label in enumerate(builder.shape_label):
             text_label = str(label)
             for pattern, mu in friction_overrides.items():
@@ -2107,6 +2250,33 @@ class NewtonSession:
                     builder.shape_material_mu_rolling[shape_index] = 0.01
                     self.friction_override_matches.setdefault(str(pattern), []).append(shape_index)
                     break
+            for pattern, stiffness in stiffness_overrides.items():
+                if str(pattern) in text_label:
+                    builder.shape_material_ke[shape_index] = float(stiffness)
+                    break
+            for pattern, damping in damping_overrides.items():
+                if str(pattern) in text_label:
+                    builder.shape_material_kd[shape_index] = float(damping)
+                    break
+        effort_overrides = {
+            str(name): float(value)
+            for name, value in dict(self.scene.get("joint_effort_overrides") or {}).items()
+        }
+        if any(not math.isfinite(value) or value <= 0.0 for value in effort_overrides.values()):
+            raise ValueError("joint_effort_overrides must contain positive finite torque/force limits")
+        limit_overrides = {
+            str(name): [float(bound) for bound in list(value)]
+            for name, value in dict(self.scene.get("joint_limit_overrides") or {}).items()
+        }
+        for name, bounds in limit_overrides.items():
+            if (
+                len(bounds) != 2
+                or not all(math.isfinite(bound) for bound in bounds)
+                or bounds[0] >= bounds[1]
+            ):
+                raise ValueError(
+                    f"joint_limit_overrides[{name!r}] must be finite [lower, upper]"
+                )
         labels = list(builder.joint_label)
         starts = list(builder.joint_q_start)
         drive_starts = list(builder.joint_qd_start)
@@ -2123,6 +2293,9 @@ class NewtonSession:
             drive_index = int(drive_starts[joint_id])
             self.joint_indices[name] = index
             self.joint_drive_indices[name] = drive_index
+            if name in limit_overrides:
+                builder.joint_limit_lower[drive_index] = limit_overrides[name][0]
+                builder.joint_limit_upper[drive_index] = limit_overrides[name][1]
             lower = float(builder.joint_limit_lower[drive_index])
             upper = float(builder.joint_limit_upper[drive_index])
             if not math.isfinite(lower) or not math.isfinite(upper) or lower >= upper:
@@ -2152,6 +2325,8 @@ class NewtonSession:
             )
             builder.joint_target_ke[drive_index] = stiffness
             builder.joint_target_kd[drive_index] = damping
+            if name in effort_overrides:
+                builder.joint_effort_limit[drive_index] = effort_overrides[name]
             self.joint_drive_gains[name] = {"stiffness": stiffness, "damping": damping}
             self.current[name] = initial
             self.desired[name] = initial
@@ -2160,10 +2335,22 @@ class NewtonSession:
         unknown_home = sorted(set(home_positions) - set(self.joint_indices))
         if unknown_home:
             raise RuntimeError("home_positions contains unknown one-DOF joints: " + ", ".join(unknown_home))
+        unknown_limits = sorted(set(limit_overrides) - set(self.joint_indices))
+        if unknown_limits:
+            raise RuntimeError(
+                "joint_limit_overrides contains unknown one-DOF joints: "
+                + ", ".join(unknown_limits)
+            )
         unknown_drives = sorted(set(self.joint_drive_overrides) - set(self.joint_indices))
         if unknown_drives:
             raise RuntimeError(
                 "joint_drive_overrides contains unknown one-DOF joints: " + ", ".join(unknown_drives)
+            )
+        unknown_effort_limits = sorted(set(effort_overrides) - set(self.joint_indices))
+        if unknown_effort_limits:
+            raise RuntimeError(
+                "joint_effort_overrides contains unknown one-DOF joints: "
+                + ", ".join(unknown_effort_limits)
             )
 
         rigid_bodies = list(self.scene.get("rigid_bodies") or [])
@@ -2212,7 +2399,68 @@ class NewtonSession:
             builder.add_ground_plane(
                 height=float(ground.get("height_m", self.scene.get("ground_height_m") or 0.0))
             )
+        # Newton's automatic estimate can be too small for an imported robot:
+        # broadphase candidates from the articulated links can then consume the
+        # whole allocation and silently drop the gripper/prop contacts.  Allow
+        # contact-critical scenes to provide an explicit per-world budget.
+        requested_contact_budget = int(self.scene.get("rigid_contact_max_per_world") or 0)
+        if requested_contact_budget:
+            builder.num_rigid_contacts_per_world = max(
+                64, min(65_536, requested_contact_budget)
+            )
+        self.free_joint_state_starts = {
+            int(child): (
+                int(builder.joint_q_start[joint]),
+                int(builder.joint_qd_start[joint]),
+            )
+            for joint, (child, joint_type) in enumerate(
+                zip(builder.joint_child, builder.joint_type)
+            )
+            if int(joint_type) == int(newton.JointType.FREE)
+        }
         self.model = builder.finalize(device=device)
+        raw_contact_solref = self.scene.get("mujoco_contact_solref")
+        if raw_contact_solref is not None:
+            values = [float(value) for value in list(raw_contact_solref)]
+            if (
+                len(values) != 2
+                or not all(math.isfinite(value) and value > 0.0 for value in values)
+            ):
+                raise ValueError(
+                    "mujoco_contact_solref must be [positive time constant, "
+                    "positive damping ratio]"
+                )
+            mujoco_attributes = getattr(self.model, "mujoco", None)
+            solref_array = getattr(mujoco_attributes, "solref", None)
+            solref_mode_array = getattr(mujoco_attributes, "solref_mode", None)
+            if solref_array is None or solref_mode_array is None:
+                raise RuntimeError(
+                    "this Newton build does not expose MuJoCo per-shape solref attributes"
+                )
+            solref = solref_array.numpy()
+            solref[:] = values
+            solref_array.assign(solref)
+            # Newton SolverMuJoCo constant: preserve the supplied values as
+            # native MuJoCo (timeconst, dampratio), rather than converting the
+            # generic force-space ke/kd fields again.
+            solref_mode = solref_mode_array.numpy()
+            solref_mode[:] = 1  # SOLREF_MODE_RAW
+            solref_mode_array.assign(solref_mode)
+        raw_grip_condim = self.scene.get("mujoco_grip_condim")
+        if raw_grip_condim is not None:
+            grip_condim = int(raw_grip_condim)
+            if grip_condim not in {1, 3, 4, 6}:
+                raise ValueError("mujoco_grip_condim must be one of 1, 3, 4, or 6")
+            mujoco_attributes = getattr(self.model, "mujoco", None)
+            condim_array = getattr(mujoco_attributes, "condim", None)
+            if condim_array is None:
+                raise RuntimeError(
+                    "this Newton build does not expose MuJoCo per-shape condim attributes"
+                )
+            condim = condim_array.numpy()
+            for shape_index in self.grip_pad_shape_indices:
+                condim[int(shape_index)] = grip_condim
+            condim_array.assign(condim)
         if particle_fill:
             self.model.particle_mu = float(particle_fill["friction"])
             self.model.particle_cohesion = float(particle_fill["cohesion"])
@@ -2420,9 +2668,14 @@ class NewtonSession:
                 ]
         flags = self.model.shape_flags.numpy().tolist()
         collision_bit = int(newton.ShapeFlags.COLLIDE_SHAPES)
+        validated_collision_paths = [
+            path
+            for path in normalized_collision_paths
+            if not any(pattern in path for pattern in disabled_shape_patterns)
+        ]
         active_collision_indices, missing_collision_paths, inactive_collision_paths = (
             _normalized_collision_import_status(
-                normalized_collision_paths,
+                validated_collision_paths,
                 dict(usd_import_result.get("path_shape_map") or {}),
                 flags,
                 collision_bit,
@@ -2455,8 +2708,87 @@ class NewtonSession:
                 "Newton did not activate every normalized USD collision mesh; "
                 "physics cannot start safely (" + "; ".join(details) + ")"
             )
-        self.solver = newton.solvers.SolverXPBD(self.model, iterations=self.solver_iterations)
-        self.contacts = self.model.contacts()
+        solver_name = str(self.scene.get("solver") or "xpbd").strip().lower()
+        use_mujoco_native_contacts = bool(
+            self.scene.get("mujoco_use_native_contacts", True)
+        )
+        self.solver_uses_native_contacts = (
+            solver_name == "mujoco" and use_mujoco_native_contacts
+        )
+        requested_broad_phase = str(
+            self.scene.get("collision_broad_phase") or "explicit"
+        ).strip().lower()
+        if requested_broad_phase not in {"explicit", "nxn", "sap"}:
+            raise ValueError(
+                "collision_broad_phase must be one of: explicit, nxn, sap"
+            )
+        if solver_name == "mujoco":
+            use_mujoco_cpu = bool(self.scene.get("mujoco_cpu", False))
+            solver_contact_budget = int(
+                self.scene.get("rigid_contact_max_per_world")
+                or self.model.rigid_contact_max
+            )
+            external_contact_limits = (
+                {
+                    "nconmax": solver_contact_budget,
+                    # A 6-D frictional contact can contribute multiple scalar
+                    # constraints. Keep enough EFC rows for every accepted
+                    # Newton contact instead of MJWarp's small mesh default.
+                    "njmax": max(256, solver_contact_budget * 6),
+                }
+                if not use_mujoco_native_contacts
+                else {}
+            )
+            update_data_interval = int(
+                self.scene.get(
+                    "mujoco_update_data_interval", 0 if use_mujoco_cpu else 1
+                )
+            )
+            if update_data_interval < 0:
+                raise ValueError("mujoco_update_data_interval cannot be negative")
+            if not use_mujoco_cpu:
+                self.model.request_contact_attributes("force")
+            self.solver = newton.solvers.SolverMuJoCo(
+                self.model,
+                use_mujoco_contacts=use_mujoco_native_contacts,
+                use_mujoco_cpu=use_mujoco_cpu,
+                solver="newton",
+                integrator="implicitfast",
+                cone="elliptic",
+                iterations=self.solver_iterations,
+                ls_iterations=50,
+                ccd_iterations=max(1, int(self.scene.get("mujoco_ccd_iterations", 35))),
+                enable_multiccd=bool(self.scene.get("mujoco_enable_multiccd", False)),
+                impratio=float(self.scene.get("mujoco_impratio", 1.0)),
+                update_data_interval=update_data_interval,
+                save_to_mjcf=(
+                    str(self.scene["mujoco_save_to_mjcf"])
+                    if self.scene.get("mujoco_save_to_mjcf")
+                    else None
+                ),
+                **external_contact_limits,
+            )
+        elif solver_name == "xpbd":
+            self.solver = newton.solvers.SolverXPBD(
+                self.model, iterations=self.solver_iterations
+            )
+        else:
+            raise ValueError(f"unsupported rigid solver: {solver_name!r}")
+        self.collision_pipeline = None
+        if requested_broad_phase == "explicit":
+            self.contacts = self.model.contacts()
+        else:
+            contact_budget = int(
+                self.scene.get("rigid_contact_max_per_world")
+                or self.model.rigid_contact_max
+            )
+            self.collision_pipeline = newton.CollisionPipeline(
+                self.model,
+                broad_phase=requested_broad_phase,
+                shape_pairs_max=contact_budget,
+                rigid_contact_max=contact_budget,
+            )
+            self.contacts = self.collision_pipeline.contacts()
         self.control = self.model.control()
         self._new_states(newton, wp)
         if asset_path and asset_format in {"urdf", "mjcf"}:
@@ -2511,24 +2843,60 @@ class NewtonSession:
     def _assign_body_pose_overrides(self, wp: Any) -> None:
         if not self.body_pose_overrides:
             return
+        newton, _wp = self._imports()
         for state in (self.state_0, self.state_1):
-            body_q = getattr(state, "body_q", None)
-            if body_q is None:
-                continue
-            poses = body_q.numpy().tolist()
-            for index, pose in self.body_pose_overrides.items():
-                if 0 <= index < len(poses):
+            joint_q = getattr(state, "joint_q", None)
+            joint_qd = getattr(state, "joint_qd", None)
+            if joint_q is None or joint_qd is None:
+                body_q = getattr(state, "body_q", None)
+                body_qd = getattr(state, "body_qd", None)
+                if body_q is None:
+                    continue
+                poses = body_q.numpy().tolist()
+                velocities = body_qd.numpy().tolist() if body_qd is not None else []
+                for index, pose in self.body_pose_overrides.items():
+                    if not 0 <= index < len(poses):
+                        continue
                     poses[index] = list(pose)
-            body_q.assign(wp.array(poses, dtype=wp.transform, device=self.model.device))
-            body_qd = getattr(state, "body_qd", None)
-            if body_qd is not None:
-                velocities = body_qd.numpy().tolist()
-                for index in self.body_pose_overrides:
                     if 0 <= index < len(velocities):
-                        velocities[index] = [0.0] * len(velocities[index])
-                body_qd.assign(
-                    wp.array(velocities, dtype=wp.spatial_vector, device=self.model.device)
+                        velocities[index] = [0.0] * 6
+                body_q.assign(
+                    wp.array(poses, dtype=wp.transform, device=self.model.device)
                 )
+                if body_qd is not None:
+                    body_qd.assign(
+                        wp.array(
+                            velocities,
+                            dtype=wp.spatial_vector,
+                            device=self.model.device,
+                        )
+                    )
+                continue
+            coordinates = joint_q.numpy().tolist()
+            velocities = joint_qd.numpy().tolist()
+            for index, pose in self.body_pose_overrides.items():
+                starts = self.free_joint_state_starts.get(int(index))
+                if starts is None:
+                    continue
+                q_start, qd_start = starts
+                coordinates[q_start : q_start + 7] = list(pose)
+                velocities[qd_start : qd_start + 6] = [0.0] * 6
+            joint_q.assign(wp.array(coordinates, dtype=wp.float32, device=self.model.device))
+            joint_qd.assign(wp.array(velocities, dtype=wp.float32, device=self.model.device))
+            newton.eval_fk(self.model, joint_q, joint_qd, state)
+        solver = getattr(self, "solver", None)
+        if solver is not None:
+            solver.reset(self.state_0, flags=0)
+            # With continuous native MuJoCo ownership (update interval 0), a
+            # teleport is an explicit synchronization point instead of being
+            # copied again at every following physics step.
+            if int(getattr(solver, "update_data_interval", 1)) != 1:
+                solver_data = (
+                    solver.mj_data
+                    if bool(getattr(solver, "use_mujoco_cpu", False))
+                    else solver.mjw_data
+                )
+                solver._update_mjc_data(solver_data, self.model, self.state_0)
 
     def _new_states(self, newton: Any, wp: Any) -> None:
         self.state_0 = self.model.state()
@@ -2611,7 +2979,16 @@ class NewtonSession:
     def _read_state(self, newton: Any) -> None:
         if self.state_0.joint_q is None:
             return
-        newton.eval_ik(self.model, self.state_0, self.state_0.joint_q, self.state_0.joint_qd)
+        # SolverMuJoCo already converts mjData.qpos/qvel into Newton joint_q,
+        # joint_qd and body_q in _update_newton_state(). Running eval_ik over
+        # that result is redundant and can rewrite a free joint from its body
+        # transform. In contact-heavy frames this corrupted the cube's X/Y
+        # coordinates without a corresponding velocity, making it teleport in
+        # the viewer on the first lift step. XPBD still needs body-to-joint IK.
+        if not self.solver_uses_native_contacts:
+            newton.eval_ik(
+                self.model, self.state_0, self.state_0.joint_q, self.state_0.joint_qd
+            )
         coordinates = self.state_0.joint_q.numpy().tolist()
         with self.lock:
             self.current = {name: float(coordinates[index]) for name, index in self.joint_indices.items()}
@@ -2644,18 +3021,28 @@ class NewtonSession:
                 with self.lock:
                     self._expire_stale_stream_follow()
                     paused = self.paused
+                    single_step = paused and self.pending_steps > 0
+                    if single_step:
+                        self.pending_steps -= 1
                     reset = self.reset_requested
                     self.reset_requested = False
                     if reset:
                         self._new_states(newton, wp)
-                    if not paused:
+                    if not paused or single_step:
                         # Serialize a physics step with viewport teleports. A
                         # drag can pause and replace body_q immediately after a
                         # complete frame, never halfway through solver writes.
                         self._apply_safe_target(frame_dt, wp)
                         for _substep_index in range(self.substeps):
                             self.state_0.clear_forces()
-                            self.model.collide(self.state_0, self.contacts)
+                            # Native-contact MuJoCo performs its own collision
+                            # pass. In external-contact mode Newton generates
+                            # triangle-mesh contacts and MJWarp consumes them.
+                            if not self.solver_uses_native_contacts:
+                                if self.collision_pipeline is None:
+                                    self.model.collide(self.state_0, self.contacts)
+                                else:
+                                    self.collision_pipeline.collide(self.state_0, self.contacts)
                             self.solver.step(
                                 self.state_0, self.state_1, self.control, self.contacts, step_dt
                             )
@@ -2689,6 +3076,12 @@ class NewtonSession:
                     self.stop_event.wait(delay)
                 else:
                     next_frame = time.perf_counter()
+                    # A solver that is slightly slower than real time must
+                    # still yield after each completed frame. Without this,
+                    # the physics thread immediately reacquires `self.lock`
+                    # and can starve native viewers, camera sensors, gizmos,
+                    # and control requests for seconds at a time.
+                    time.sleep(0)
         except Exception as exc:  # noqa: BLE001 - captured for node status
             with self.lock:
                 self.last_error = f"{type(exc).__name__}: {exc}"
@@ -3193,7 +3586,19 @@ class NewtonSession:
     def set_paused(self, paused: bool) -> dict[str, Any]:
         with self.lock:
             self.paused = bool(paused)
+            if not self.paused:
+                self.pending_steps = 0
             self.phase = "paused" if self.paused else "running"
+        return self.status()
+
+    def request_step(self) -> dict[str, Any]:
+        """Advance exactly one rendered physics frame while paused."""
+        with self.lock:
+            if not self.paused:
+                raise RuntimeError("single-step requires a paused simulation")
+            if self.phase not in {"running", "paused"}:
+                raise RuntimeError("simulation is not running")
+            self.pending_steps += 1
         return self.status()
 
     def request_reset(self) -> dict[str, Any]:
@@ -3543,7 +3948,7 @@ def start_session(
             requested_startup_config = {
                 "device": str(device or "auto"),
                 "fps": max(10, min(120, int(fps))),
-                "substeps": max(1, min(16, int(substeps))),
+                "substeps": max(1, min(MAX_PHYSICS_SUBSTEPS, int(substeps))),
                 "solver_iterations": max(1, min(64, int(solver_iterations))),
                 "joint_stiffness": prior._validate_drive_gain("joint_stiffness", joint_stiffness),
                 "joint_damping": prior._validate_drive_gain("joint_damping", joint_damping),
@@ -3620,6 +4025,8 @@ def control_session(run_id: str, action: str) -> dict[str, Any]:
         return session.set_armed(False)
     if action == "pause":
         return session.set_paused(True)
+    if action == "step":
+        return session.request_step()
     if action == "resume":
         return session.set_paused(False)
     if action == "reset":

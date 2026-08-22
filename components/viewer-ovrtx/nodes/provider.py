@@ -31,11 +31,12 @@ def _workspace_scene_path(path: Any) -> str:
 _VIEWER_HTML = r"""<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Blacknode Newton · OVRT</title><style>
 :root{color-scheme:dark;font-family:Inter,system-ui,sans-serif;background:#080b11;color:#edf3ff}*{box-sizing:border-box}html,body{width:100%;height:100%;margin:0;overflow:hidden;background:#080b11}#v{position:fixed;inset:0;display:grid;place-items:center;cursor:default;user-select:none;touch-action:none}#v.drag{cursor:grabbing}#s{width:100%;height:100%;object-fit:contain;pointer-events:none;-webkit-user-drag:none}#e{position:absolute;inset:0;display:grid;place-items:center;background:radial-gradient(circle at 50% 42%,#172131,#080b11 65%)}#c{max-width:520px;padding:24px;text-align:center}.spin{width:34px;height:34px;margin:0 auto 15px;border:3px solid #273449;border-top-color:#76b900;border-radius:50%;animation:r 1s linear infinite}@keyframes r{to{transform:rotate(360deg)}}#s1{font-weight:700;font-size:15px}#d{margin-top:8px;color:#9ba9bd;font-size:13px;line-height:1.45}#h{position:fixed;left:12px;top:12px;padding:8px 10px;border:1px solid #ffffff18;border-radius:8px;background:#080b11bb;font-size:11px;line-height:1.5;pointer-events:none}#h strong{color:#76b900}#help{position:fixed;right:12px;bottom:12px;padding:7px 9px;border-radius:7px;background:#080b11aa;color:#aab5c5;font-size:10px;pointer-events:none}
 #m{position:fixed;left:50%;top:12px;z-index:4;display:flex;gap:3px;padding:4px;transform:translateX(-50%);border:1px solid #ffffff20;border-radius:9px;background:#080b11dd;backdrop-filter:blur(10px)}#m button{padding:5px 8px;border:1px solid transparent;border-radius:6px;background:transparent;color:#aeb9c9;cursor:pointer;font:600 10px Inter,system-ui,sans-serif}#m button:hover{color:#fff;background:#ffffff10}#m button.on{border-color:#76b900aa;background:#76b90022;color:#dfffad}
+#presets{position:fixed;right:12px;top:12px;z-index:8;display:none;gap:4px;padding:5px;border:1px solid #ffffff20;border-radius:9px;background:#080b11dd;box-shadow:0 8px 24px #0006;backdrop-filter:blur(10px)}#presets button{padding:7px 10px;border:1px solid #ffffff18;border-radius:6px;background:#111826;color:#d8e2f0;cursor:pointer;font:650 11px Inter,system-ui,sans-serif}#presets button:hover{border-color:#76b900aa;background:#76b90022;color:#fff}#presets button.on{border-color:#76b900;background:#76b90033;color:#e8ffc8}
 #tools{position:fixed;left:12px;top:50%;z-index:8;display:grid;gap:3px;padding:4px;transform:translateY(-50%);border:1px solid #ffffff20;border-radius:9px;background:#080b11dd;box-shadow:0 8px 24px #0006;backdrop-filter:blur(10px)}#tools button{position:relative;display:grid;width:34px;height:34px;padding:0;border:1px solid transparent;border-radius:6px;background:transparent;color:#aeb9c9;place-items:center;cursor:pointer}#tools button:hover{color:#fff;background:#ffffff10}#tools button.on{border-color:#76b900aa;background:#76b90022;color:#dfffad;box-shadow:inset 3px 0 #76b900}#tools svg{width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}#tools kbd{position:absolute;right:2px;bottom:1px;color:#78869a;font:700 8px Inter,system-ui,sans-serif}#tools button.on kbd{color:#b9e47c}
 #g{position:fixed;z-index:7;display:none;width:0;height:0;pointer-events:none;opacity:0}#g[data-tool="select"]{display:none!important}#g .move-handles,#g .scale-handles,#g .rotate-handles{display:none}#g[data-tool="move"] .move-handles,#g[data-tool="scale"] .scale-handles,#g[data-tool="rotate"] .rotate-handles{display:block}#g.is-picking .move-handles,#g.is-picking .scale-handles,#g.is-picking .rotate-handles{display:none}
 #g .gizmo-axis{--axis:#fff;position:absolute;left:0;top:-5px;width:58px;height:10px;padding:0;border:0;background:linear-gradient(transparent 3px,var(--axis) 3px,var(--axis) 7px,transparent 7px);transform-origin:0 50%;pointer-events:auto;cursor:grab}#g .move-axis::after{content:"";position:absolute;right:-1px;top:0;border-left:10px solid var(--axis);border-top:5px solid transparent;border-bottom:5px solid transparent}#g .scale-axis::after{content:"";position:absolute;right:-3px;top:0;width:10px;height:10px;background:var(--axis);box-shadow:0 0 0 1px #0008}#g .gizmo-axis span{position:absolute;right:-18px;top:-4px;color:var(--axis);font:800 11px Inter,system-ui,sans-serif;text-shadow:0 1px 2px #000}#g .gizmo-handle:active{cursor:grabbing;filter:brightness(1.5)}#g .axis-x{--axis:#ff4d45}#g .axis-y{--axis:#66d15c}#g .axis-z{--axis:#4795ff}
 #g .rotate-handles{position:absolute;left:-52px;top:-52px;width:104px;height:104px;overflow:visible;pointer-events:none}#g .rotate-ring{fill:none;stroke:var(--axis);stroke-width:4;stroke-linecap:round;stroke-linejoin:round;vector-effect:non-scaling-stroke;pointer-events:stroke;cursor:grab;filter:drop-shadow(0 0 1px #000)}#g .scale-uniform{position:absolute;left:-6px;top:-6px;width:12px;height:12px;padding:0;border:1px solid #fff;background:#ffb21a;pointer-events:auto;cursor:grab;transform:rotate(45deg)}
-</style></head><body><div id="v"><img id="s" src="/stream.mjpg" draggable="false"><div id="e"><div id="c"><div class="spin"></div><div id="s1">Starting NVIDIA OVRT</div><div id="d">The first render initializes and caches RTX shaders.</div></div></div></div><div id="tools" role="toolbar" aria-label="Viewport tools"><button data-tool="select" class="on" title="Select (Q)" aria-label="Select tool (Q)"><svg viewBox="0 0 24 24"><path d="M5 3l12 9-6 1.5L8.5 19z"/></svg><kbd>Q</kbd></button><button data-tool="move" title="Move (W)" aria-label="Move tool (W)"><svg viewBox="0 0 24 24"><path d="M12 2v20M2 12h20M12 2l-3 3m3-3l3 3M22 12l-3-3m3 3l-3 3"/></svg><kbd>W</kbd></button><button data-tool="rotate" title="Rotate (E)" aria-label="Rotate tool (E)"><svg viewBox="0 0 24 24"><path d="M19 8a8 8 0 10.5 7M19 3v5h-5"/></svg><kbd>E</kbd></button><button data-tool="scale" title="Scale (R)" aria-label="Scale tool (R)"><svg viewBox="0 0 24 24"><path d="M5 19L19 5M12 5h7v7M4 15h5v5H4z"/></svg><kbd>R</kbd></button></div><div id="g" data-tool="select"><div class="move-handles"><button class="gizmo-handle gizmo-axis move-axis axis-x" data-kind="move" data-axis="x"><span>X</span></button><button class="gizmo-handle gizmo-axis move-axis axis-y" data-kind="move" data-axis="y"><span>Y</span></button><button class="gizmo-handle gizmo-axis move-axis axis-z" data-kind="move" data-axis="z"><span>Z</span></button></div><svg class="rotate-handles" viewBox="-52 -52 104 104" aria-label="Rotation gizmo"><polyline class="gizmo-handle rotate-ring axis-x" data-kind="rotate" data-axis="x"/><polyline class="gizmo-handle rotate-ring axis-y" data-kind="rotate" data-axis="y"/><polyline class="gizmo-handle rotate-ring axis-z" data-kind="rotate" data-axis="z"/></svg><div class="scale-handles"><button class="gizmo-handle gizmo-axis scale-axis axis-x" data-kind="scale" data-axis="x"><span>X</span></button><button class="gizmo-handle gizmo-axis scale-axis axis-y" data-kind="scale" data-axis="y"><span>Y</span></button><button class="gizmo-handle gizmo-axis scale-axis axis-z" data-kind="scale" data-axis="z"><span>Z</span></button><button class="gizmo-handle scale-uniform" data-kind="scale" data-axis="uniform" title="Uniform scale"></button></div></div><div id="h"><strong>OVRT</strong> · <span id="p">starting</span><br>render <span id="f">0</span> · physics <span id="pf">0</span></div><div id="m" aria-label="Perception view"><button data-mode="rgb" class="on">RGB</button><button data-mode="depth">Depth IR</button><button data-mode="segmentation">Segments</button><button data-mode="detection">Boxes</button><button data-mode="composite">Composite</button></div><div id="help">Q Select · W Move · E Rotate · R Scale · Orbit: left · Pan: middle · Zoom: right/wheel · Alt also supported</div><script>
+</style></head><body><div id="v"><img id="s" src="/stream.mjpg" draggable="false"><div id="e"><div id="c"><div class="spin"></div><div id="s1">Starting NVIDIA OVRT</div><div id="d">The first render initializes and caches RTX shaders.</div></div></div></div><div id="tools" role="toolbar" aria-label="Viewport tools"><button data-tool="select" class="on" title="Select (Q)" aria-label="Select tool (Q)"><svg viewBox="0 0 24 24"><path d="M5 3l12 9-6 1.5L8.5 19z"/></svg><kbd>Q</kbd></button><button data-tool="move" title="Move (W)" aria-label="Move tool (W)"><svg viewBox="0 0 24 24"><path d="M12 2v20M2 12h20M12 2l-3 3m3-3l3 3M22 12l-3-3m3 3l-3 3"/></svg><kbd>W</kbd></button><button data-tool="rotate" title="Rotate (E)" aria-label="Rotate tool (E)"><svg viewBox="0 0 24 24"><path d="M19 8a8 8 0 10.5 7M19 3v5h-5"/></svg><kbd>E</kbd></button><button data-tool="scale" title="Scale (R)" aria-label="Scale tool (R)"><svg viewBox="0 0 24 24"><path d="M5 19L19 5M12 5h7v7M4 15h5v5H4z"/></svg><kbd>R</kbd></button></div><div id="g" data-tool="select"><div class="move-handles"><button class="gizmo-handle gizmo-axis move-axis axis-x" data-kind="move" data-axis="x"><span>X</span></button><button class="gizmo-handle gizmo-axis move-axis axis-y" data-kind="move" data-axis="y"><span>Y</span></button><button class="gizmo-handle gizmo-axis move-axis axis-z" data-kind="move" data-axis="z"><span>Z</span></button></div><svg class="rotate-handles" viewBox="-52 -52 104 104" aria-label="Rotation gizmo"><polyline class="gizmo-handle rotate-ring axis-x" data-kind="rotate" data-axis="x"/><polyline class="gizmo-handle rotate-ring axis-y" data-kind="rotate" data-axis="y"/><polyline class="gizmo-handle rotate-ring axis-z" data-kind="rotate" data-axis="z"/></svg><div class="scale-handles"><button class="gizmo-handle gizmo-axis scale-axis axis-x" data-kind="scale" data-axis="x"><span>X</span></button><button class="gizmo-handle gizmo-axis scale-axis axis-y" data-kind="scale" data-axis="y"><span>Y</span></button><button class="gizmo-handle gizmo-axis scale-axis axis-z" data-kind="scale" data-axis="z"><span>Z</span></button><button class="gizmo-handle scale-uniform" data-kind="scale" data-axis="uniform" title="Uniform scale"></button></div></div><div id="h"><strong>OVRT</strong> · <span id="p">starting</span><br>render <span id="f">0</span> · physics <span id="pf">0</span></div><div id="m" aria-label="Perception view"><button data-mode="rgb" class="on">RGB</button><button data-mode="depth">Depth IR</button><button data-mode="segmentation">Segments</button><button data-mode="detection">Boxes</button><button data-mode="composite">Composite</button></div><div id="presets" aria-label="Studio camera views"></div><div id="help">Click object · W Move · E Rotate · R Scale · Camera previews: top right · Orbit: left · Pan: middle · Zoom: right/wheel</div><script>
 const v=document.querySelector('#v'),s=document.querySelector('#s'),e=document.querySelector('#e'),g=document.querySelector('#g');let drag=null,pending=null,raf=0,selection=null,gdrag=null,pendingTransform=null,previewTransform=null,transformRaf=0,tool='select';
 async function post(path,x){try{return await fetch(path,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(x)})}catch{return null}}
 function notify(type,payload){if(window.parent!==window)window.parent.postMessage({type,...payload},'*')}
@@ -49,7 +50,7 @@ async function pick(event){const r=imageRect(),x=(event.clientX-r.left)/r.width,
 function flushTransform(){transformRaf=0;if(!pendingTransform)return;previewTransform=pendingTransform;pendingTransform=null;post('/api/transform-preview',previewTransform)}
 function beginGizmo(event){event.preventDefault();event.stopPropagation();const kind=event.currentTarget.dataset.kind,axis=event.currentTarget.dataset.axis,index={x:0,y:1,z:2}[axis],axes=kind==='move'?selection?.gizmo?.axes:selection?.gizmo?.local_axes,data=axes?.[axis],centerX=Number.parseFloat(g.style.left),centerY=Number.parseFloat(g.style.top);if(!selection?.editable||kind==='move'&&(!data||index===undefined)||kind==='rotate'&&(!data||index===undefined)||kind==='scale'&&(!selection.scale_editable||axis!=='uniform'&&(!data||index===undefined)))return;let screen=data?.screen||[Math.SQRT1_2,-Math.SQRT1_2];if(kind==='rotate'&&Array.isArray(data?.ring)){let nearest=0,best=Infinity;data.ring.forEach((point,i)=>{const distance=Math.hypot(centerX+point[0]-event.clientX,centerY+point[1]-event.clientY);if(distance<best){best=distance;nearest=i}});const before=data.ring[(nearest-1+data.ring.length)%data.ring.length],after=data.ring[(nearest+1)%data.ring.length],length=Math.hypot(after[0]-before[0],after[1]-before[1])||1;screen=[(after[0]-before[0])/length,(after[1]-before[1])/length]}gdrag={kind,axis,index,startX:event.clientX,startY:event.clientY,startLeft:centerX,startTop:centerY,screen,ppm:data?.pixels_per_meter||1,transform:structuredClone(selection.transform)};event.currentTarget.setPointerCapture(event.pointerId)}
 function moveGizmo(event){if(!gdrag)return;event.preventDefault();event.stopPropagation();const dx=event.clientX-gdrag.startX,dy=event.clientY-gdrag.startY,transform=structuredClone(gdrag.transform);if(gdrag.kind==='move'){const pixels=dx*gdrag.screen[0]+dy*gdrag.screen[1];transform.translate_m[gdrag.index]+=pixels/gdrag.ppm;g.style.left=`${gdrag.startLeft+gdrag.screen[0]*pixels}px`;g.style.top=`${gdrag.startTop+gdrag.screen[1]*pixels}px`}else if(gdrag.kind==='rotate'){const pixels=dx*gdrag.screen[0]+dy*gdrag.screen[1];transform.rotate_deg[gdrag.index]+=pixels/44*180/Math.PI}else{const pixels=gdrag.axis==='uniform'?(dx-dy)*Math.SQRT1_2:dx*gdrag.screen[0]+dy*gdrag.screen[1],factor=Math.exp(pixels/120);if(gdrag.axis==='uniform')transform.scale=transform.scale.map(value=>Math.max(1e-4,value*factor));else transform.scale[gdrag.index]=Math.max(1e-4,transform.scale[gdrag.index]*factor)}selection={...selection,transform};pendingTransform={path:selection.path,transform};if(!transformRaf)transformRaf=requestAnimationFrame(flushTransform)}
-function endGizmo(event){if(!gdrag)return;event.preventDefault();event.stopPropagation();if(transformRaf){cancelAnimationFrame(transformRaf);transformRaf=0}if(pendingTransform){previewTransform=pendingTransform;pendingTransform=null;post('/api/transform-preview',previewTransform)}if(previewTransform)notify('blacknode-newton-transform',previewTransform);previewTransform=null;try{event.currentTarget.releasePointerCapture(event.pointerId)}catch{}gdrag=null}
+async function endGizmo(event){if(!gdrag)return;event.preventDefault();event.stopPropagation();if(transformRaf){cancelAnimationFrame(transformRaf);transformRaf=0}if(pendingTransform){previewTransform=pendingTransform;pendingTransform=null}if(previewTransform){const committed=previewTransform;await post('/api/transform-commit',committed);notify('blacknode-newton-transform',committed)}previewTransform=null;try{event.currentTarget.releasePointerCapture(event.pointerId)}catch{}gdrag=null}
 g.querySelectorAll('.gizmo-handle').forEach(handle=>{handle.addEventListener('pointerdown',beginGizmo);handle.addEventListener('pointermove',moveGizmo);handle.addEventListener('pointerup',endGizmo);handle.addEventListener('pointercancel',endGizmo)});
 function end(x){const wasClick=drag&&!drag.alt&&drag.b===0&&drag.distance<4;if(wasClick)pick(x);drag=null;v.classList.remove('drag');if(selection&&!wasClick)showSelection(selection);try{v.releasePointerCapture(x.pointerId)}catch{}}
 v.onpointerdown=x=>{if(x.button<0||x.button>2)return;x.preventDefault();drag={x:x.clientX,y:x.clientY,b:x.button,alt:x.altKey,distance:0,navigating:false};v.setPointerCapture(x.pointerId)};v.onpointermove=x=>{if(!drag)return;x.preventDefault();const dx=x.clientX-drag.x,dy=x.clientY-drag.y;drag.x=x.clientX;drag.y=x.clientY;drag.distance+=Math.hypot(dx,dy);if(drag.distance<3)return;if(!drag.navigating){drag.navigating=true;v.classList.add('drag');g.style.display='none'}move(drag.b===0?'orbit':drag.b===1?'pan':'zoom',dx,dy)};v.onpointerup=end;v.onpointercancel=end;v.onlostpointercapture=()=>{drag=null;v.classList.remove('drag');if(selection&&!gdrag)showSelection(selection)};v.ondragstart=x=>x.preventDefault();v.oncontextmenu=x=>x.preventDefault();v.onwheel=x=>{x.preventDefault();post('/api/camera',{action:'zoom',delta:x.deltaY})};v.ondblclick=()=>post('/api/camera',{action:'reset'});
@@ -58,6 +59,7 @@ document.querySelectorAll('#tools button').forEach(button=>button.onclick=()=>se
 const viewModes=new Set(['rgb','depth','segmentation','detection','composite']);
 async function setViewMode(mode){if(!viewModes.has(mode))return;const response=await post('/api/view',{mode});if(!response?.ok)return;document.querySelectorAll('#m button').forEach(button=>button.classList.toggle('on',button.dataset.mode===mode));notify('blacknode-newton-view-state',{mode})}
 document.querySelectorAll('#m button').forEach(button=>button.onclick=()=>setViewMode(button.dataset.mode));
+async function loadPresets(){try{const value=await(await fetch('/api/camera-presets',{cache:'no-store'})).json(),panel=document.querySelector('#presets');if(!Array.isArray(value.names)||!value.names.length){panel.style.display='none';return}panel.style.display='flex';panel.replaceChildren(...value.names.map(name=>{const button=document.createElement('button');button.textContent=name==='editor'?'3D Editor':`${name} camera`;button.onclick=async()=>{await post('/api/camera-presets',{name});panel.querySelectorAll('button').forEach(item=>item.classList.toggle('on',item===button))};return button}))}catch{}}loadPresets();
 window.addEventListener('message',event=>{if(event.source!==window.parent)return;const message=event.data;if(message?.type==='blacknode-newton-view')setViewMode(String(message.mode||''))});
 </script></body></html>"""
 
@@ -676,6 +678,9 @@ class OVRTViewer:
         self._frame_ready = threading.Condition(self._web_lock)
         self._jpeg = b""
         self._render_frame = 0
+        self._camera_request_serial = 0
+        self._camera_applied_serial = 0
+        self._camera_ready = threading.Condition(self._web_lock)
         self._worker_collision_wireframe_count = 0
         self._worker_colliders_visible = False
         self._worker_collision_overlay_pixels = 0
@@ -689,6 +694,10 @@ class OVRTViewer:
         self._selection_gizmo: dict[str, Any] = {}
         self._selection_version = 0
         self._selection_ready = threading.Condition(self._web_lock)
+        self._camera_presets: dict[str, Any] = {}
+        self._camera_helper_paths: list[str] = []
+        self._selection_aliases: dict[str, str] = {}
+        self._scale_locked_paths: set[str] = set()
         self._sender_started = False
         self._updates: queue.Queue[dict[str, Any] | None] = queue.Queue(maxsize=256)
 
@@ -759,7 +768,12 @@ class OVRTViewer:
             "show_colliders": bool(
                 getattr(session, "show_colliders", config.get("show_colliders", False))
             ),
-            "camera": {"position": position, "target": target, "up_axis": up_axis},
+            "camera": {
+                "position": position,
+                "target": target,
+                "up_axis": up_axis,
+                "up_vector": list(dict(config.get("camera") or {}).get("up_vector") or []),
+            },
             "width": width,
             "height": height,
             "render_fps": max(1, min(60, int(config.get("render_fps") or 60))),
@@ -868,6 +882,13 @@ class OVRTViewer:
                     event.get("collision_depth_range") or [0.0, 0.0]
                 )
                 self._frame_ready.notify_all()
+        elif event.get("type") == "camera_applied":
+            with self._camera_ready:
+                self._camera_applied_serial = max(
+                    self._camera_applied_serial,
+                    int(event.get("request_id") or 0),
+                )
+                self._camera_ready.notify_all()
         elif event.get("type") == "error":
             self._last_error = str(event.get("message") or "OVRT worker failed")
             with self._frame_ready:
@@ -876,10 +897,40 @@ class OVRTViewer:
                 self._frame_ready.notify_all()
         elif event.get("type") == "selection":
             with self._selection_ready:
-                self.selected_path = _workspace_scene_path(event.get("path"))
+                selected_path = _workspace_scene_path(event.get("path"))
+                selected_path = next(
+                    (
+                        destination
+                        for source, destination in sorted(
+                            self._selection_aliases.items(),
+                            key=lambda item: len(item[0]), reverse=True,
+                        )
+                        if selected_path == source or selected_path.startswith(source + "/")
+                    ),
+                    selected_path,
+                )
+                selected_item = next(
+                    (
+                        item for item in list(getattr(self.session, "scene_items", []) or [])
+                        if str(item.get("path") or "") == selected_path
+                    ),
+                    None,
+                )
+                physics_path = str((selected_item or {}).get("physics_body_path") or "")
+                physics_item = next(
+                    (
+                        item for item in list(getattr(self.session, "scene_items", []) or [])
+                        if str(item.get("path") or "") == physics_path
+                        and bool(item.get("physics_pose_editable"))
+                    ),
+                    None,
+                )
+                self.selected_path = str((physics_item or {}).get("path") or selected_path)
                 self._selection_gizmo = dict(event.get("gizmo") or {})
                 self._selection_version += 1
                 self._selection_ready.notify_all()
+                if self.selected_path != selected_path:
+                    self._queue_update({"type": "select", "path": self.selected_path})
         elif event.get("type") == "gizmo":
             with self._web_lock:
                 if str(event.get("path") or "") == self.selected_path:
@@ -941,6 +992,7 @@ class OVRTViewer:
             "scale_editable": bool(
                 (item or {}).get("editable")
                 and not (item or {}).get("physics_pose_editable")
+                and path not in self._scale_locked_paths
             ),
             "transform": dict((item or {}).get("transform") or {}),
             "gizmo": dict(self._selection_gizmo),
@@ -993,6 +1045,13 @@ class OVRTViewer:
                     self._send_headers(HTTPStatus.OK, "application/json", len(body))
                     self.wfile.write(body)
                     return
+                if path == "/api/camera-presets":
+                    with viewer._web_lock:
+                        names = ["editor", *viewer._camera_presets]
+                    body = json.dumps({"names": names}).encode("utf-8")
+                    self._send_headers(HTTPStatus.OK, "application/json", len(body))
+                    self.wfile.write(body)
+                    return
                 if path == "/stream.mjpg":
                     self._send_headers(HTTPStatus.OK, "multipart/x-mixed-replace; boundary=frame")
                     seen = -1
@@ -1021,13 +1080,35 @@ class OVRTViewer:
             def do_POST(self) -> None:  # noqa: N802
                 path = urlparse(self.path).path
                 if path not in {
-                    "/api/camera", "/api/view", "/api/pick", "/api/tool", "/api/transform-preview"
+                    "/api/camera", "/api/view", "/api/pick", "/api/tool",
+                    "/api/transform-preview", "/api/transform-commit",
+                    "/api/camera-presets"
                 }:
                     self._send_headers(HTTPStatus.NOT_FOUND, "text/plain", 0)
                     return
                 try:
                     length = min(16384, int(self.headers.get("Content-Length") or 0))
                     value = json.loads(self.rfile.read(length) or b"{}")
+                    if path == "/api/camera-presets":
+                        name = str(value.get("name") or "")
+                        if name == "editor":
+                            for helper_path in viewer._camera_helper_paths:
+                                viewer.set_visibility(helper_path, True)
+                            viewer._queue_update({"type": "camera", "action": "reset"})
+                        else:
+                            with viewer._web_lock:
+                                resolver = viewer._camera_presets.get(name)
+                            if not callable(resolver):
+                                raise ValueError("unknown camera preset")
+                            preset = dict(resolver() or {})
+                            for helper_path in viewer._camera_helper_paths:
+                                viewer.set_visibility(helper_path, False)
+                            viewer.set_camera_view(
+                                preset["position_m"], preset["target_m"],
+                                up_vector=preset.get("up_vector"),
+                            )
+                        self._send_headers(HTTPStatus.NO_CONTENT, "text/plain", 0)
+                        return
                     if path == "/api/pick":
                         x = float(value.get("x"))
                         y = float(value.get("y"))
@@ -1057,7 +1138,7 @@ class OVRTViewer:
                         viewer._queue_update({"type": "gizmo_tool", "tool": tool})
                         self._send_headers(HTTPStatus.NO_CONTENT, "text/plain", 0)
                         return
-                    if path == "/api/transform-preview":
+                    if path in {"/api/transform-preview", "/api/transform-commit"}:
                         transform = dict(value.get("transform") or {})
                         clean_transform: dict[str, list[float]] = {}
                         for name, default in (
@@ -1076,22 +1157,45 @@ class OVRTViewer:
                         preview_path = str(value.get("path") or "")
                         if not preview_path.startswith("/"):
                             raise ValueError("transform preview requires an absolute prim path")
-                        viewer._queue_update({
-                            "type": "transform",
-                            "path": preview_path,
-                            "transform": clean_transform,
-                            "meters_per_unit": viewer._meters_per_unit,
-                            "preview": True,
-                        })
+                        if path == "/api/transform-commit":
+                            viewer.session.set_transform(preview_path, clean_transform)
+                        else:
+                            viewer._queue_update({
+                                "type": "transform",
+                                "path": preview_path,
+                                "transform": clean_transform,
+                                "meters_per_unit": viewer._meters_per_unit,
+                                "preview": True,
+                            })
                         self._send_headers(HTTPStatus.NO_CONTENT, "text/plain", 0)
                         return
                     action = str(value.get("action") or "")
-                    if action not in {"orbit", "pan", "zoom", "reset"}:
+                    if action not in {"orbit", "pan", "zoom", "reset", "set"}:
                         raise ValueError("unsupported camera action")
                     event: dict[str, Any] = {"type": "camera", "action": action}
                     for name in ("dx", "dy", "delta"):
                         if name in value:
                             event[name] = max(-500.0, min(500.0, float(value[name])))
+                    if action == "set":
+                        for name in ("position", "target", "up_vector"):
+                            if name in value:
+                                vector = [float(item) for item in list(value[name])]
+                                if len(vector) != 3 or not all(
+                                    math.isfinite(item) for item in vector
+                                ):
+                                    raise ValueError(
+                                        f"camera {name} requires three finite values"
+                                    )
+                                if name in {"position", "target"}:
+                                    vector = [
+                                        item / viewer._meters_per_unit for item in vector
+                                    ]
+                                event[name] = vector
+                        if "up_axis" in value:
+                            axis = str(value["up_axis"]).lower()
+                            if axis not in {"x", "y", "z"}:
+                                raise ValueError("camera up_axis must be X, Y, or Z")
+                            event["up_axis"] = axis
                     viewer._queue_update(event)
                     self._send_headers(HTTPStatus.NO_CONTENT, "text/plain", 0)
                 except (ValueError, TypeError, json.JSONDecodeError):
@@ -1151,6 +1255,61 @@ class OVRTViewer:
     def end_frame(self) -> None:
         pass
 
+    def set_camera_view(
+        self,
+        position_m: Any,
+        target_m: Any,
+        *,
+        up_vector: Any | None = None,
+        up_axis: str | None = None,
+    ) -> bool:
+        """Set an absolute observation-camera pose in world metres.
+
+        This is intentionally separate from the interactive orbit controls so
+        dataset recorders can render multiple calibrated cameras from one
+        frozen Newton state.
+        """
+        self._raise_if_exited()
+        position = [float(value) for value in list(position_m)]
+        target = [float(value) for value in list(target_m)]
+        if len(position) != 3 or len(target) != 3:
+            raise ValueError("camera position and target require three values")
+        if not all(math.isfinite(value) for value in position + target):
+            raise ValueError("camera position and target must be finite")
+        if sum((position[index] - target[index]) ** 2 for index in range(3)) < 1.0e-12:
+            raise ValueError("camera position and target must differ")
+        event: dict[str, Any] = {
+            "type": "camera",
+            "action": "set",
+            "position": [value / self._meters_per_unit for value in position],
+            "target": [value / self._meters_per_unit for value in target],
+        }
+        if up_vector is not None:
+            up = [float(value) for value in list(up_vector)]
+            if len(up) != 3 or not all(math.isfinite(value) for value in up):
+                raise ValueError("camera up_vector requires three finite values")
+            if sum(value * value for value in up) < 1.0e-12:
+                raise ValueError("camera up_vector cannot be zero")
+            event["up_vector"] = up
+        if up_axis is not None:
+            axis = str(up_axis).lower()
+            if axis not in {"x", "y", "z"}:
+                raise ValueError("camera up_axis must be X, Y, or Z")
+            event["up_axis"] = axis
+        with self._camera_ready:
+            self._camera_request_serial += 1
+            request_id = self._camera_request_serial
+            event["request_id"] = request_id
+        self._queue_update(event)
+        with self._camera_ready:
+            applied = self._camera_ready.wait_for(
+                lambda: self._camera_applied_serial >= request_id or self._closed,
+                timeout=10.0,
+            )
+        if not applied or self._camera_applied_serial < request_id:
+            raise TimeoutError("OVRTX did not render the requested camera pose within 10 seconds")
+        return True
+
     def set_visibility(self, path: str, visible: bool) -> bool:
         self._raise_if_exited()
         self._queue_update({
@@ -1158,6 +1317,32 @@ class OVRTViewer:
             "path": str(path),
             "visible": bool(visible),
         })
+        return True
+
+    def set_camera_presets(
+        self, presets: dict[str, Any], helper_paths: list[str] | None = None
+    ) -> bool:
+        """Expose named, dynamically resolved observation views in the browser."""
+        with self._web_lock:
+            self._camera_presets = {
+                str(name): resolver for name, resolver in dict(presets).items()
+                if str(name) and callable(resolver)
+            }
+            self._camera_helper_paths = [
+                str(path) for path in list(helper_paths or []) if str(path)
+            ]
+            self._scale_locked_paths.update(self._camera_helper_paths)
+        return True
+
+    def set_selection_aliases(self, aliases: dict[str, str]) -> bool:
+        """Redirect picked render geometry to a purpose-built editor handle."""
+        with self._web_lock:
+            self._selection_aliases = {
+                str(source).rstrip("/"): str(destination)
+                for source, destination in dict(aliases).items()
+                if str(source).startswith("/") and str(destination).startswith("/")
+            }
+            self._scale_locked_paths.update(self._selection_aliases.values())
         return True
 
     def set_selection(self, path: str) -> bool:
