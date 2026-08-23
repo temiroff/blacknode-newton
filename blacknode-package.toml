@@ -1,6 +1,6 @@
 [package]
 name = "blacknode-newton"
-version = "0.1.3"
+version = "0.1.4"
 description = "Interactive Newton physics sessions, browser visualization, and safe articulation teleoperation for Blacknode."
 requires-blacknode = ">=0.3.0"
 layer = "simulation"

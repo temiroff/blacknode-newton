@@ -1942,10 +1942,13 @@ class NewtonSession:
             builder.default_mesh_approximation_cfg.coacd_threshold = 0.2
             display_root = stage.GetPrimAtPath(COLLIDER_DISPLAY_ROOT)
             visual_display_root = stage.GetPrimAtPath(VISUAL_DISPLAY_ROOT)
+            material_root = stage.GetPrimAtPath(WORKSPACE_MATERIAL_ROOT)
             if display_root and display_root.IsValid():
                 display_root.SetActive(False)
             if visual_display_root and visual_display_root.IsValid():
                 visual_display_root.SetActive(False)
+            if material_root and material_root.IsValid():
+                material_root.SetActive(False)
             try:
                 usd_import_result = builder.add_usd(
                     stage,
@@ -2028,6 +2031,8 @@ class NewtonSession:
                     display_root.SetActive(True)
                 if visual_display_root and visual_display_root.IsValid():
                     visual_display_root.SetActive(True)
+                if material_root and material_root.IsValid():
+                    material_root.SetActive(True)
             _hide_generated_convex_collision_visuals(
                 builder.shape_label,
                 builder.shape_flags,
