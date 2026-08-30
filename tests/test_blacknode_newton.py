@@ -2499,6 +2499,61 @@ endsolid link
         with self.assertRaisesRegex(ValueError, "between 0 and 1e12"):
             NewtonSession._validate_drive_gain("gain", -1)
 
+    def test_mujoco_gravity_compensation_selects_robot_not_free_props(self) -> None:
+        from blacknode.pkg.blacknode_newton import runtime
+
+        actgravcomp = SimpleNamespace(values=None)
+        body_gravcomp = SimpleNamespace(values=None)
+        builder = SimpleNamespace(
+            custom_attributes={
+                "mujoco:jnt_actgravcomp": actgravcomp,
+                "mujoco:gravcomp": body_gravcomp,
+            },
+            # Bodies 0-2 form the robot; body 3 is a separate free prop.
+            joint_parent=[-1, 0, 1, -1],
+            joint_child=[0, 1, 2, 3],
+            body_mass=[0.0, 1.0, 0.25, 0.005],
+        )
+        result = runtime._configure_mujoco_gravity_compensation(
+            builder,
+            {"shoulder": 0, "gripper": 1},
+            {"shoulder": 1, "gripper": 2},
+            {
+                "enabled": True,
+                "joint_names": ["shoulder"],
+                "body_factor": 1.0,
+            },
+        )
+
+        self.assertEqual(actgravcomp.values, {0: True})
+        self.assertEqual(body_gravcomp.values, {1: 1.0, 2: 1.0})
+        self.assertNotIn(3, body_gravcomp.values)
+        self.assertEqual(result["joint_names"], ["shoulder"])
+        self.assertEqual(result["body_indices"], [1, 2])
+
+        actgravcomp.values = {}
+        body_gravcomp.values = {}
+        selected_result = runtime._configure_mujoco_gravity_compensation(
+            builder,
+            {"shoulder": 0, "gripper": 1},
+            {"shoulder": 1, "gripper": 2},
+            {
+                "joint_names": ["shoulder"],
+                "body_mode": "selected",
+            },
+        )
+        self.assertEqual(body_gravcomp.values, {1: 1.0})
+        self.assertEqual(selected_result["body_indices"], [1])
+        self.assertEqual(selected_result["body_mode"], "selected")
+
+        with self.assertRaisesRegex(ValueError, "unknown one-DOF joints"):
+            runtime._configure_mujoco_gravity_compensation(
+                builder,
+                {"shoulder": 0},
+                {"shoulder": 1},
+                {"joint_names": ["missing"]},
+            )
+
     def test_digital_twin_history_is_sampled_bounded_and_clearable(self) -> None:
         from blacknode.pkg.blacknode_newton import runtime
 

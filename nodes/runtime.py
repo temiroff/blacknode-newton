@@ -1237,6 +1237,105 @@ def _connected_body_indices(
     return connected
 
 
+def _configure_mujoco_gravity_compensation(
+    builder: Any,
+    joint_drive_indices: dict[str, int],
+    joint_child_bodies: dict[str, int],
+    raw_config: Any,
+) -> dict[str, Any]:
+    """Enable MuJoCo gravity compensation for selected articulation joints.
+
+    Body compensation is applied to the complete connected robot component,
+    while free props remain outside that component and continue to feel
+    gravity.  Joint actuator compensation is limited to the selected one-DOF
+    drives so callers can leave a gripper drive uncompensated.
+    """
+    if isinstance(raw_config, dict):
+        enabled = bool(raw_config.get("enabled", True))
+        requested_names = [
+            str(value) for value in list(raw_config.get("joint_names") or [])
+        ]
+        excluded_names = {
+            str(value) for value in list(raw_config.get("exclude_joint_names") or [])
+        }
+        body_factor = float(raw_config.get("body_factor", 1.0))
+        body_mode = str(raw_config.get("body_mode", "connected")).strip().lower()
+    else:
+        enabled = bool(raw_config)
+        requested_names = []
+        excluded_names = set()
+        body_factor = 1.0
+        body_mode = "connected"
+
+    result = {
+        "enabled": enabled,
+        "joint_names": [],
+        "body_indices": [],
+        "body_factor": body_factor,
+        "body_mode": body_mode,
+    }
+    if not enabled:
+        return result
+    if not math.isfinite(body_factor) or not 0.0 <= body_factor <= 1.0:
+        raise ValueError(
+            "mujoco_gravity_compensation.body_factor must be between 0 and 1"
+        )
+    if body_mode not in {"connected", "selected"}:
+        raise ValueError(
+            "mujoco_gravity_compensation.body_mode must be connected or selected"
+        )
+
+    available_names = set(joint_drive_indices)
+    selected_names = (
+        set(requested_names) if requested_names else available_names
+    ) - excluded_names
+    unknown_names = sorted((set(requested_names) | excluded_names) - available_names)
+    if unknown_names:
+        raise ValueError(
+            "mujoco_gravity_compensation contains unknown one-DOF joints: "
+            + ", ".join(unknown_names)
+        )
+    if not selected_names:
+        raise ValueError(
+            "mujoco_gravity_compensation must select at least one one-DOF joint"
+        )
+
+    actgravcomp_attr = builder.custom_attributes.get("mujoco:jnt_actgravcomp")
+    body_gravcomp_attr = builder.custom_attributes.get("mujoco:gravcomp")
+    if actgravcomp_attr is None or body_gravcomp_attr is None:
+        raise RuntimeError(
+            "MuJoCo gravity-compensation attributes were not registered"
+        )
+    if actgravcomp_attr.values is None:
+        actgravcomp_attr.values = {}
+    if body_gravcomp_attr.values is None:
+        body_gravcomp_attr.values = {}
+
+    for name in sorted(selected_names):
+        actgravcomp_attr.values[int(joint_drive_indices[name])] = True
+
+    body_seeds = {int(joint_child_bodies[name]) for name in selected_names}
+    body_indices = (
+        _connected_body_indices(
+            body_seeds,
+            list(builder.joint_parent),
+            list(builder.joint_child),
+        )
+        if body_mode == "connected"
+        else body_seeds
+    )
+    compensated_bodies = []
+    for body_index in sorted(body_indices):
+        if body_index < 0 or float(builder.body_mass[body_index]) <= 0.0:
+            continue
+        body_gravcomp_attr.values[body_index] = body_factor
+        compensated_bodies.append(body_index)
+
+    result["joint_names"] = sorted(selected_names)
+    result["body_indices"] = compensated_bodies
+    return result
+
+
 def _apply_workspace_usd_edits(stage: Any, edits: dict[str, Any]) -> list[dict[str, Any]]:
     """Author non-destructive workspace overrides and return an outliner snapshot."""
     from pxr import Gf, Sdf, Usd, UsdGeom, UsdPhysics, UsdShade
@@ -1577,6 +1676,13 @@ class NewtonSession:
         self.joint_damping = self._validate_drive_gain("joint_damping", joint_damping)
         self.joint_drive_overrides = self._validate_drive_overrides(joint_drive_overrides)
         self.joint_drive_gains: dict[str, dict[str, float]] = {}
+        self.gravity_compensation: dict[str, Any] = {
+            "enabled": False,
+            "joint_names": [],
+            "body_indices": [],
+            "body_factor": 1.0,
+            "body_mode": "connected",
+        }
         self.max_velocity_rad_s = math.radians(max(0.1, float(max_velocity_deg_s)))
         self.max_step_rad = math.radians(max(0.01, float(max_step_deg)))
         self.lock = threading.RLock()
@@ -2358,6 +2464,22 @@ class NewtonSession:
                 + ", ".join(unknown_effort_limits)
             )
 
+        raw_gravity_compensation = self.scene.get("mujoco_gravity_compensation", False)
+        if raw_gravity_compensation:
+            if str(self.scene.get("solver") or "xpbd").strip().lower() != "mujoco":
+                raise ValueError(
+                    "mujoco_gravity_compensation requires solver='mujoco'"
+                )
+            self.gravity_compensation = _configure_mujoco_gravity_compensation(
+                builder,
+                self.joint_drive_indices,
+                {
+                    name: int(settings["child_body_index"])
+                    for name, settings in self.joint_dynamics.items()
+                },
+                raw_gravity_compensation,
+            )
+
         rigid_bodies = list(self.scene.get("rigid_bodies") or [])
         for body_spec in rigid_bodies:
             name = str(body_spec["name"])
@@ -2761,7 +2883,7 @@ class NewtonSession:
                 integrator="implicitfast",
                 cone="elliptic",
                 iterations=self.solver_iterations,
-                ls_iterations=50,
+                ls_iterations=100,
                 ccd_iterations=max(1, int(self.scene.get("mujoco_ccd_iterations", 35))),
                 enable_multiccd=bool(self.scene.get("mujoco_enable_multiccd", False)),
                 impratio=float(self.scene.get("mujoco_impratio", 1.0)),
@@ -3868,6 +3990,7 @@ class NewtonSession:
                 "joint_drive_gains": {
                     name: dict(settings) for name, settings in self.joint_drive_gains.items()
                 },
+                "gravity_compensation": copy.deepcopy(self.gravity_compensation),
                 "joint_dynamics": copy.deepcopy(self.joint_dynamics),
                 "joint_motion_limits": copy.deepcopy(self.joint_motion_limits),
                 "friction_override_matches": {
