@@ -1,6 +1,6 @@
 [package]
 name = "blacknode-newton"
-version = "0.1.5"
+version = "0.1.6"
 description = "Interactive Newton physics sessions, browser visualization, and safe articulation teleoperation for Blacknode."
 requires-blacknode = ">=0.3.0"
 layer = "simulation"
@@ -15,7 +15,7 @@ default = true
 capabilities = ["simulation.newton", "simulation.scene", "simulation.articulation"]
 nodes = ["nodes"]
 module-root = true
-node-types = ["NewtonUSDScene", "NewtonViewerConfig", "NewtonSimulation", "NewtonJointCommand", "SO101ReachTask"]
+node-types = ["NewtonScene", "NewtonUSDScene", "NewtonViewerConfig", "NewtonSimulation", "NewtonJointCommand", "SO101ReachTask"]
 
 [components.runtime.dependencies]
 pip = ["newton[importers,sim]>=1.4,<2", "xacro>=2.1,<3"]

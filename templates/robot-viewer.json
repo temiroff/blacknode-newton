@@ -1,0 +1,140 @@
+{
+  "kind": "blacknode.workflow",
+  "schema_version": 1,
+  "name": "Robot Viewer",
+  "saved_at": "2026-08-31T00:00:00Z",
+  "entrypoint": {"node_id": "simulation", "port": "viewer_url"},
+  "metadata": {
+    "template": true,
+    "description": "Open a user-supplied USD, URDF, Xacro, XML, or MJCF robot description in one interactive Blacknode viewer. The workflow selects no default model and starts simulation motion disarmed.",
+    "color": "#76b900",
+    "required_packages": ["blacknode-newton"],
+    "required_components": ["blacknode-newton/runtime", "blacknode-newton/viewer-viser"],
+    "operator_view": {
+      "schema_version": 1,
+      "id": "robot-viewer",
+      "title": "Robot Viewer",
+      "description": "Load and inspect a robot description supplied on this App host.",
+      "accent": "#76b900",
+      "icon": "robot",
+      "run_target": {
+        "node_id": "simulation",
+        "port": "viewer_url",
+        "mode": "once",
+        "label": "Open robot"
+      },
+      "sections": [
+        {
+          "id": "viewer",
+          "layout": "stack",
+          "widgets": [
+            {
+              "type": "viewer",
+              "id": "robot-scene",
+              "title": "Robot scene",
+              "source": {"node_id": "simulation", "port": "viewer_url"},
+              "empty": "Enter a model path, then press Open robot."
+            }
+          ]
+        },
+        {
+          "id": "state",
+          "layout": "grid",
+          "widgets": [
+            {
+              "type": "status",
+              "id": "viewer-status",
+              "title": "Viewer status",
+              "items": [
+                {"label": "Scene", "node_id": "scene", "port": "report", "tone": "neutral"},
+                {"label": "Simulation", "node_id": "simulation", "port": "phase", "tone": "neutral"},
+                {"label": "Motion", "node_id": "simulation", "port": "armed", "true_label": "Armed", "false_label": "Disarmed", "tone": "danger"}
+              ]
+            }
+          ]
+        },
+        {
+          "id": "parameters",
+          "region": "parameters",
+          "layout": "stack",
+          "widgets": [
+            {
+              "type": "fields",
+              "id": "model-fields",
+              "title": "Robot description",
+              "items": [
+                {
+                  "label": "Model path",
+                  "node_id": "scene",
+                  "param": "asset_path",
+                  "input": "file_path",
+                  "placeholder": "C:\\robots\\arm.urdf or /opt/robots/arm.xacro",
+                  "button_label": "Browse…",
+                  "picker_title": "Choose a robot description",
+                  "extensions": [".usd", ".usda", ".usdc", ".urdf", ".xacro", ".xml", ".mjcf"]
+                },
+                {
+                  "label": "Xacro arguments (JSON)",
+                  "node_id": "scene",
+                  "param": "xacro_arguments",
+                  "input": "textarea",
+                  "placeholder": "{\"variant\":\"arm\",\"tool\":\"gripper\"}"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "node_meta": {
+    "scene": {
+      "id": "scene",
+      "type": "NewtonScene",
+      "params": {
+        "asset_path": "",
+        "root_path": "/",
+        "fixed_base": true,
+        "ground_enabled": true,
+        "ground_height": 0.0,
+        "self_collisions": false,
+        "show_colliders": false,
+        "xacro_arguments": "{}"
+      },
+      "pos": [80, 120],
+      "inputs": ["trigger", "asset_path", "root_path", "fixed_base", "ground_enabled", "ground_height", "self_collisions", "show_colliders", "xacro_arguments"],
+      "outputs": ["ok", "scene", "report"],
+      "input_types": {"trigger": "Any", "asset_path": "Text", "root_path": "Text", "fixed_base": "Bool", "ground_enabled": "Bool", "ground_height": "Float", "self_collisions": "Bool", "show_colliders": "Bool", "xacro_arguments": "Text"},
+      "output_types": {"ok": "Bool", "scene": "Dict", "report": "Text"},
+      "input_defaults": {"asset_path": "", "root_path": "/", "fixed_base": true, "ground_enabled": true, "ground_height": 0.0, "self_collisions": false, "show_colliders": false, "xacro_arguments": "{}"}
+    },
+    "viewer": {
+      "id": "viewer",
+      "type": "NewtonViewerConfig",
+      "params": {"provider": "viser", "port": 8080, "label": "Blacknode Robot Viewer", "background_color": "#6383c5", "show_grid": true, "hdri": "apartment", "show_hdri_background": true, "hdri_intensity": 1.0, "render_fps": 30, "camera_position": [], "camera_target": [], "camera_up_axis": "auto", "camera_speed": 1.0},
+      "pos": [80, 440],
+      "inputs": ["trigger", "provider", "port", "label", "background_color", "show_grid", "hdri", "show_hdri_background", "hdri_intensity", "render_fps", "camera_position", "camera_target", "camera_up_axis", "camera_speed"],
+      "outputs": ["ok", "viewer", "viewer_url", "report"],
+      "input_types": {"trigger": "Any", "provider": "Text", "port": "Int", "label": "Text", "background_color": "Text", "show_grid": "Bool", "hdri": "Enum", "show_hdri_background": "Bool", "hdri_intensity": "Float", "render_fps": "Int", "camera_position": "List", "camera_target": "List", "camera_up_axis": "Enum", "camera_speed": "Float"},
+      "output_types": {"ok": "Bool", "viewer": "Dict", "viewer_url": "Text", "report": "Text"},
+      "input_defaults": {"provider": "viser", "port": 8080, "label": "Blacknode Newton Viewer", "background_color": "#6383c5", "show_grid": true, "hdri": "apartment", "show_hdri_background": true, "hdri_intensity": 1.0, "render_fps": 30, "camera_position": [], "camera_target": [], "camera_up_axis": "auto", "camera_speed": 1.0},
+      "input_choices": {"hdri": ["none", "apartment", "city", "dawn", "forest", "lobby", "night", "park", "studio", "sunset", "warehouse"], "camera_up_axis": ["auto", "X", "Y", "Z"]}
+    },
+    "simulation": {
+      "id": "simulation",
+      "type": "NewtonSimulation",
+      "params": {"action": "start", "run_id": "robot-viewer", "device": "auto", "fps": 60, "substeps": 4, "solver_iterations": 16, "joint_stiffness": 100000000.0, "joint_damping": 100000.0, "joint_drive_overrides": {}, "max_velocity_deg_s": 45.0, "max_step_deg": 2.0},
+      "pos": [520, 260],
+      "inputs": ["trigger", "action", "run_id", "scene", "viewer", "device", "fps", "substeps", "solver_iterations", "joint_stiffness", "joint_damping", "joint_drive_overrides", "max_velocity_deg_s", "max_step_deg"],
+      "outputs": ["ok", "running", "armed", "phase", "session", "positions", "rigid_bodies", "viewer_url", "report"],
+      "input_types": {"trigger": "Any", "action": "Enum", "run_id": "Text", "scene": "Dict", "viewer": "Dict", "device": "Text", "fps": "Int", "substeps": "Int", "solver_iterations": "Int", "joint_stiffness": "Float", "joint_damping": "Float", "joint_drive_overrides": "Dict", "max_velocity_deg_s": "Float", "max_step_deg": "Float"},
+      "output_types": {"ok": "Bool", "running": "Bool", "armed": "Bool", "phase": "Text", "session": "Dict", "positions": "Dict", "rigid_bodies": "Dict", "viewer_url": "Text", "report": "Text"},
+      "input_defaults": {"action": "status", "run_id": "newton-scene", "scene": {}, "viewer": {}, "device": "auto", "fps": 60, "substeps": 4, "solver_iterations": 16, "joint_stiffness": 100000000.0, "joint_damping": 100000.0, "joint_drive_overrides": {}, "max_velocity_deg_s": 45.0, "max_step_deg": 2.0},
+      "input_choices": {"action": ["status", "start", "arm", "disarm", "pause", "resume", "reset", "stop"]}
+    }
+  },
+  "edges": [
+    {"from": "scene", "from_port": "scene", "to": "simulation", "to_port": "scene"},
+    {"from": "viewer", "from_port": "viewer", "to": "simulation", "to_port": "viewer"}
+  ]
+}

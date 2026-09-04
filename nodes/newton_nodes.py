@@ -1,6 +1,9 @@
 """Typed Blacknode nodes for Newton scene creation and teleoperation."""
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 from blacknode.node import Any as AnyPort
 from blacknode.node import Bool, Dict, Enum, Float, Int, List, Text, node
 
@@ -11,6 +14,103 @@ stop_runtime_services = runtime.stop_runtime_services
 
 _CATEGORY = "Newton Simulation"
 _DEFAULT_ASSET = runtime.package_asset_uri("assets/so101_robot.usd")
+
+
+def _xacro_arguments(value: object) -> dict[str, object]:
+    if value in (None, ""):
+        return {}
+    if isinstance(value, dict):
+        return dict(value)
+    try:
+        parsed = json.loads(str(value))
+    except json.JSONDecodeError as exc:
+        raise ValueError(
+            "xacro_arguments must be a JSON object such as "
+            '{"variant":"arm","tool":"gripper"}'
+        ) from exc
+    if not isinstance(parsed, dict):
+        raise ValueError("xacro_arguments must contain one JSON object")
+    return parsed
+
+
+@node(
+    name="NewtonScene",
+    component="runtime",
+    category=_CATEGORY,
+    description=(
+        "Load a user-selected USD, URDF, Xacro, or MuJoCo scene for Newton "
+        "visualization and physics. No model is selected by default."
+    ),
+    inputs={
+        "trigger": AnyPort,
+        "asset_path": Text(default=""),
+        "root_path": Text(default="/"),
+        "fixed_base": Bool(default=True),
+        "ground_enabled": Bool(default=True),
+        "ground_height": Float(default=0.0),
+        "self_collisions": Bool(default=False),
+        "show_colliders": Bool(default=False),
+        "xacro_arguments": Text(default="{}"),
+    },
+    outputs={"ok": Bool, "scene": Dict, "report": Text},
+    primary_inputs=["trigger", "asset_path"],
+    primary_outputs=["scene", "report"],
+)
+def newton_scene(ctx: dict) -> dict:
+    asset_path = str(ctx.get("asset_path") or "").strip()
+    try:
+        if not asset_path:
+            raise ValueError(
+                "asset_path is required; choose a USD, URDF, Xacro, XML, or MJCF file"
+            )
+        suffix = Path(asset_path).suffix.lower()
+        common = {
+            "asset_path": asset_path,
+            "fixed_base": bool(ctx.get("fixed_base", True)),
+            "ground_enabled": bool(ctx.get("ground_enabled", True)),
+            "ground_height": float(ctx.get("ground_height") or 0.0),
+            "self_collisions": bool(ctx.get("self_collisions", False)),
+            "show_colliders": bool(ctx.get("show_colliders", False)),
+        }
+        if suffix in {".usd", ".usda", ".usdc"}:
+            scene = runtime.make_usd_scene_spec(
+                **common,
+                root_path=str(ctx.get("root_path") or "/"),
+                home_positions={},
+                rigid_bodies=[],
+                particle_fill={},
+                convex_decomposition_patterns=[],
+                friction_overrides={},
+            )
+        elif suffix in {".urdf", ".xacro"}:
+            scene = runtime.make_robot_description_scene_spec(
+                **common,
+                xacro_arguments=_xacro_arguments(ctx.get("xacro_arguments")),
+            )
+        elif suffix in {".xml", ".mjcf"}:
+            scene = runtime.make_mjcf_scene_spec(**common)
+        else:
+            raise ValueError(
+                f"unsupported scene format {suffix or '<none>'}; "
+                "choose USD, URDF, Xacro, XML, or MJCF"
+            )
+        scene_format = str(
+            scene.get("robot_description_format") or suffix.lstrip(".") or "scene"
+        ).upper()
+        return {
+            "ok": True,
+            "scene": scene,
+            "report": (
+                f"Newton {scene_format} scene ready: "
+                f"{scene['asset_path']}; simulation motion remains disarmed"
+            ),
+        }
+    except Exception as exc:  # noqa: BLE001
+        return {
+            "ok": False,
+            "scene": {},
+            "report": f"Newton scene FAILED: {type(exc).__name__}: {exc}",
+        }
 
 
 @node(

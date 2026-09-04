@@ -113,6 +113,7 @@ DIGITAL_TWIN_HISTORY_INTERVAL_SECONDS = 0.05
 MAX_PHYSICS_SUBSTEPS = 64
 _XACRO_EXPANSION_LOCK = threading.RLock()
 _XACRO_ENVIRONMENT_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+_XACRO_ARGUMENT_NAME = re.compile(r"^[A-Za-z_][A-Za-z0-9_.-]*$")
 _XACRO_MISSING_ENVIRONMENT = re.compile(
     r"environment variable ['\"](?P<name>[^'\"]+)['\"] is not set",
     re.IGNORECASE,
@@ -371,8 +372,27 @@ def _clean_xacro_environment(value: Any) -> dict[str, str]:
     return clean
 
 
+def _clean_xacro_arguments(value: Any) -> dict[str, str]:
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise ValueError("xacro_arguments must be an object of argument names and values")
+    clean: dict[str, str] = {}
+    for raw_name, raw_value in value.items():
+        name = str(raw_name or "").strip()
+        if not _XACRO_ARGUMENT_NAME.fullmatch(name):
+            raise ValueError(f"invalid Xacro argument name: {name or '<empty>'}")
+        text = str(raw_value)
+        if "\x00" in text:
+            raise ValueError(f"Xacro argument {name!r} cannot contain a null byte")
+        clean[name] = text
+    return clean
+
+
 def _expanded_xacro_xml(
-    path: Path, xacro_environment: dict[str, Any] | None = None
+    path: Path,
+    xacro_environment: dict[str, Any] | None = None,
+    xacro_arguments: dict[str, Any] | None = None,
 ) -> str:
     try:
         import xacro
@@ -381,24 +401,58 @@ def _expanded_xacro_xml(
             "Xacro support requires xacro>=2.1; update the blacknode-newton runtime component"
         ) from exc
     environment = _clean_xacro_environment(xacro_environment)
+    arguments = _clean_xacro_arguments(xacro_arguments)
+
+    def load_yaml_utf8(filename: str):
+        try:
+            import yaml
+            for unit in xacro.ConstructUnits:
+                yaml.SafeLoader.add_constructor(unit.value.tag, unit.constructor)
+        except Exception as exc:
+            raise RuntimeError("Xacro YAML support requires PyYAML") from exc
+        resolved = xacro.abs_filename_spec(filename)
+        xacro.filestack.append(resolved)
+        try:
+            with open(resolved, encoding="utf-8-sig") as stream:
+                return xacro.YamlListWrapper.wrap(yaml.safe_load(stream))
+        finally:
+            xacro.filestack.pop()
+            xacro.all_includes.append(resolved)
+
     # xacro delegates $(find package) to ament_index_python. Robot-description
     # source trees are also useful outside a sourced ROS installation, so fall
     # back to package.xml discovery around the selected file and workspace.
     with _XACRO_EXPANSION_LOCK:
         previous_environment = {name: os.environ.get(name) for name in environment}
+        original_load_yaml = xacro.load_yaml
+        xacro_symbols = xacro._global_symbols.get("xacro")
+        original_symbol_load_yaml = (
+            xacro_symbols.get("load_yaml") if isinstance(xacro_symbols, dict) else None
+        )
+        original_legacy_load_yaml = xacro._global_symbols.get("load_yaml")
         try:
             os.environ.update(environment)
+            # YAML 1.2 streams are Unicode. Explicit UTF-8 keeps Xacro models
+            # portable on Windows hosts whose process code page is not UTF-8.
+            xacro.load_yaml = load_yaml_utf8
+            if isinstance(xacro_symbols, dict):
+                xacro_symbols["load_yaml"] = load_yaml_utf8
+            xacro._global_symbols["load_yaml"] = load_yaml_utf8
             import xacro.substitution_args as substitution_args
             original_find = substitution_args._eval_find
             original_eval_find = substitution_args._eval_dict.get("find")
 
             def find_package(package_name: str) -> str:
                 try:
-                    return str(original_find(package_name))
+                    found = str(original_find(package_name))
+                    return Path(found).as_posix() if os.name == "nt" else found
                 except Exception as original_error:
                     local = _local_ros_package_path(package_name, path)
                     if local is not None:
-                        return str(local)
+                        # Xacro substitutes this value inside Python expressions
+                        # such as xacro.load_yaml('$(find package)/file.yaml').
+                        # Windows backslashes would become escape sequences there.
+                        return local.as_posix()
                     raise RuntimeError(
                         f"ROS package {package_name!r} was not found beside {path.name} "
                         "or in AMENT_PREFIX_PATH/ROS_PACKAGE_PATH"
@@ -406,7 +460,7 @@ def _expanded_xacro_xml(
 
             substitution_args._eval_find = find_package
             substitution_args._eval_dict["find"] = find_package
-            document = xacro.process_file(str(path))
+            document = xacro.process_file(str(path), mappings=arguments)
         except Exception as exc:
             message = str(exc)
             missing = _XACRO_MISSING_ENVIRONMENT.search(message)
@@ -418,6 +472,10 @@ def _expanded_xacro_xml(
                 ) from exc
             raise ValueError(f"Xacro expansion failed for {path.name}: {message}") from exc
         finally:
+            xacro.load_yaml = original_load_yaml
+            if isinstance(xacro_symbols, dict):
+                xacro_symbols["load_yaml"] = original_symbol_load_yaml
+            xacro._global_symbols["load_yaml"] = original_legacy_load_yaml
             if "substitution_args" in locals() and "original_find" in locals():
                 substitution_args._eval_find = original_find
                 if original_eval_find is None:
@@ -449,6 +507,18 @@ def _expanded_xacro_xml(
             link = document.createElement("link")
             link.setAttribute("name", name)
             robots[0].appendChild(link)
+            declared_links.add(name)
+        child_links = {
+            element.getAttribute("link").strip()
+            for element in document.getElementsByTagName("child")
+            if element.getAttribute("link").strip()
+        }
+        roots = sorted(declared_links - child_links)
+        if len(roots) > 1:
+            raise ValueError(
+                "Xacro produced a disconnected robot with multiple root links: "
+                f"{', '.join(roots)}. Check parent/child link names and Xacro arguments."
+            )
     # Newton can parse expanded XML directly. Make file-relative mesh and
     # texture references absolute first because the expanded document no
     # longer carries its source filename into the URDF importer.
@@ -493,6 +563,7 @@ def make_robot_description_scene_spec(
     self_collisions: bool,
     show_colliders: bool,
     xacro_environment: dict[str, Any] | None = None,
+    xacro_arguments: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     path = resolve_robot_description_path(asset_path)
     clean_ground_height = float(ground_height)
@@ -506,7 +577,7 @@ def make_robot_description_scene_spec(
         "asset_format": "urdf",
         "robot_description_format": path.suffix.lower().lstrip("."),
         "robot_description_xml": (
-            _expanded_xacro_xml(path, xacro_environment)
+            _expanded_xacro_xml(path, xacro_environment, xacro_arguments)
             if path.suffix.lower() == ".xacro"
             else ""
         ),
@@ -4649,6 +4720,7 @@ def control_workspace(action: str, payload: dict[str, Any] | None = None) -> dic
                     self_collisions=bool(values.get("self_collisions", False)),
                     show_colliders=bool(values.get("show_colliders", False)),
                     xacro_environment=values.get("xacro_environment"),
+                    xacro_arguments=values.get("xacro_arguments"),
                 )
             elif suffix in {".xml", ".mjcf"}:
                 scene = make_mjcf_scene_spec(

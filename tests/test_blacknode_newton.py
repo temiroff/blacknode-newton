@@ -68,6 +68,7 @@ class BlacknodeNewtonContractTests(unittest.TestCase):
             set(self.package.node_types),
             {
                 "NewtonJointCommand",
+                "NewtonScene",
                 "NewtonSimulation",
                 "NewtonUSDScene",
                 "NewtonViewerConfig",
@@ -1853,6 +1854,127 @@ class BlacknodeNewtonContractTests(unittest.TestCase):
         self.assertEqual(scene["render"], {"show_colliders": False})
         self.assertEqual(scene["rigid_bodies"][0]["position_m"][0], 0.2455508)
         self.assertEqual(scene["rigid_bodies"][0]["mass_kg"], 0.03)
+
+    def test_model_free_scene_node_dispatches_robot_formats_and_xacro_arguments(self) -> None:
+        missing = _NODE_REGISTRY["NewtonScene"]({"asset_path": ""})
+        self.assertFalse(missing["ok"])
+        self.assertIn("asset_path is required", missing["report"])
+
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            usd_path = root / "viewer.usda"
+            usd_path.write_text("#usda 1.0\n", encoding="utf-8")
+            usd = _NODE_REGISTRY["NewtonScene"]({"asset_path": str(usd_path)})
+            self.assertTrue(usd["ok"], usd["report"])
+            self.assertEqual(usd["scene"]["root_path"], "/")
+            self.assertIn("Newton USDA scene ready", usd["report"])
+
+            urdf_path = root / "viewer.urdf"
+            urdf_path.write_text(
+                '<robot name="viewer"><link name="base_link"/></robot>',
+                encoding="utf-8",
+            )
+            urdf = _NODE_REGISTRY["NewtonScene"]({"asset_path": str(urdf_path)})
+            self.assertTrue(urdf["ok"], urdf["report"])
+            self.assertEqual(urdf["scene"]["asset_format"], "urdf")
+            self.assertFalse(urdf["scene"].get("robot_description_xml"))
+
+            xacro_path = root / "viewer.urdf.xacro"
+            xacro_path.write_text(
+                """<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="viewer">
+  <xacro:arg name="link_name" default="default_link"/>
+  <link name="$(arg link_name)"/>
+</robot>
+""",
+                encoding="utf-8",
+            )
+            xacro = _NODE_REGISTRY["NewtonScene"]({
+                "asset_path": str(xacro_path),
+                "xacro_arguments": '{"link_name":"configured_link"}',
+            })
+            self.assertTrue(xacro["ok"], xacro["report"])
+            self.assertIn('link name="configured_link"', xacro["scene"]["robot_description_xml"])
+
+            invalid_arguments = _NODE_REGISTRY["NewtonScene"]({
+                "asset_path": str(xacro_path),
+                "xacro_arguments": "[]",
+            })
+            self.assertFalse(invalid_arguments["ok"])
+            self.assertIn("one JSON object", invalid_arguments["report"])
+
+            mjcf_path = root / "viewer.mjcf"
+            mjcf_path.write_text(
+                '<mujoco model="viewer"><worldbody/></mujoco>',
+                encoding="utf-8",
+            )
+            mjcf = _NODE_REGISTRY["NewtonScene"]({"asset_path": str(mjcf_path)})
+            self.assertTrue(mjcf["ok"], mjcf["report"])
+            self.assertEqual(mjcf["scene"]["asset_format"], "mjcf")
+
+    def test_xacro_package_find_is_safe_inside_expressions(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            package = Path(temporary) / "src" / "viewer_description"
+            package.mkdir(parents=True)
+            (package / "package.xml").write_text(
+                "<package><name>viewer_description</name></package>",
+                encoding="utf-8",
+            )
+            (package / "config.yaml").write_text(
+                "link_name: configured_link\nnote: робот\n",
+                encoding="utf-8",
+            )
+            xacro_path = package / "viewer.urdf.xacro"
+            xacro_path.write_text(
+                """<?xml version="1.0"?>
+<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="viewer">
+  <xacro:property name="config" value="${xacro.load_yaml('$(find viewer_description)/config.yaml')}"/>
+  <link name="${config['link_name']}"/>
+</robot>
+""",
+                encoding="utf-8",
+            )
+            result = _NODE_REGISTRY["NewtonScene"]({"asset_path": str(xacro_path)})
+            self.assertTrue(result["ok"], result["report"])
+            self.assertIn('link name="configured_link"', result["scene"]["robot_description_xml"])
+
+            disconnected_path = package / "disconnected.urdf.xacro"
+            disconnected_path.write_text(
+                """<robot xmlns:xacro="http://www.ros.org/wiki/xacro" name="viewer">
+  <link name="root_a"/>
+  <link name="root_b"/>
+</robot>
+""",
+                encoding="utf-8",
+            )
+            disconnected = _NODE_REGISTRY["NewtonScene"]({
+                "asset_path": str(disconnected_path),
+            })
+            self.assertFalse(disconnected["ok"])
+            self.assertIn("multiple root links: root_a, root_b", disconnected["report"])
+
+    def test_robot_viewer_template_is_packageable_and_contains_no_model(self) -> None:
+        path = PACKAGE_ROOT / "templates" / "robot-viewer.json"
+        workflow = json.loads(path.read_text(encoding="utf-8"))
+        report = validate_workflow(workflow)
+        self.assertTrue(report.ok, [issue.message for issue in report.errors])
+        self.assertEqual(workflow["node_meta"]["scene"]["type"], "NewtonScene")
+        self.assertEqual(workflow["node_meta"]["scene"]["params"]["asset_path"], "")
+        self.assertEqual(
+            workflow["metadata"]["required_components"],
+            ["blacknode-newton/runtime", "blacknode-newton/viewer-viser"],
+        )
+        view = workflow["metadata"]["operator_view"]
+        self.assertEqual(view["id"], "robot-viewer")
+        viewer = view["sections"][0]["widgets"][0]
+        self.assertEqual(viewer["type"], "viewer")
+        model_field = view["sections"][2]["widgets"][0]["items"][0]
+        self.assertEqual(model_field["input"], "file_path")
+        self.assertIn(".xacro", model_field["extensions"])
+        self.assertIn(".urdf", model_field["extensions"])
+        serialized = json.dumps(workflow).lower()
+        self.assertNotIn("so101_robot.usd", serialized)
+        self.assertNotIn("openarmx", serialized)
 
     def test_particle_fill_is_procedural_bounded_and_overlap_checked(self) -> None:
         valid = _NODE_REGISTRY["NewtonUSDScene"]({
