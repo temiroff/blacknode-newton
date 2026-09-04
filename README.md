@@ -12,7 +12,7 @@
 | `rosbridge` | Off | ROS 2 `JointState` input and output over rosbridge |
 | `replay` | Off | Dataset episode playback into the active Newton articulation |
 
-The workflow nodes are `NewtonUSDScene`, `NewtonViewerConfig`,
+The workflow nodes are `NewtonScene`, `NewtonUSDScene`, `NewtonViewerConfig`,
 `NewtonSimulation`, `NewtonJointCommand`, and `SO101ReachTask`. The reach task
 defines a vectorized, simulation-only SO-ARM101 environment for reinforcement
 learning. Optional transports add `NewtonROSBridge` and `NewtonReplayBridge`.
@@ -38,6 +38,7 @@ Enable `viewer-ovrtx` to expose the optional RTX viewer. It requires a supported
 
 | Template | Purpose |
 |---|---|
+| `robot-viewer.json` | Open a user-supplied USD, URDF, Xacro, or MJCF model in a focused Workflow App; the workflow selects no default model |
 | `usd-scene-viewer.json` | Load and inspect a scene with managed simulation and viewing |
 | `so101-grain-spill-demo.json` | Run the bundled SO-101 tabletop particle demo |
 | `ros2-newton-joint-sync.json` | Mirror named ROS 2 joint state into Newton |
@@ -51,6 +52,12 @@ target marker, end-effector trail, metrics, and environment selector; OVRTX
 supplies the RTX-rendered USD view when `viewer-ovrtx` is enabled.
 
 Robot Monitor can also drive a matching Newton articulation from fresh calibrated telemetry. This authorizes simulation only; it never commands the physical robot. Stale or disconnected streams disarm the Newton follower.
+
+`robot-viewer.json` declares a packageable operator view. Open it from the
+Templates surface, browse to or enter the model path and optional Xacro argument JSON, then
+press **Open robot**. Use **File → Package App…** to deliver the same model-free
+viewer as a standalone Blacknode App; the recipient supplies the model path on
+the App host.
 
 ## Safety
 
