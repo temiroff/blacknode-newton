@@ -1820,6 +1820,7 @@ class NewtonSession:
         self._generated_render_path = ""
         self.joint_indices: dict[str, int] = {}
         self.joint_drive_indices: dict[str, int] = {}
+        self.joint_target_indices: dict[str, int] = {}
         self.joint_limits: dict[str, tuple[float, float]] = {}
         self.joint_units: dict[str, str] = {}
         self.joint_dynamics: dict[str, dict[str, Any]] = {}
@@ -1883,6 +1884,9 @@ class NewtonSession:
             import warp as wp
         except Exception as exc:  # pragma: no cover - package health normally catches this
             raise RuntimeError("Newton and Warp are required; install package prerequisites") from exc
+        # Newton 1.5's coordinate-shaped target layout matches joint_q and is
+        # the forward-compatible contract for free, ball, and distance joints.
+        newton.use_coord_layout_targets = True
         return newton, wp
 
     def _resolve_device(self, wp: Any) -> str:
@@ -2475,6 +2479,7 @@ class NewtonSession:
             drive_index = int(drive_starts[joint_id])
             self.joint_indices[name] = index
             self.joint_drive_indices[name] = drive_index
+            self.joint_target_indices[name] = index
             if name in limit_overrides:
                 builder.joint_limit_lower[drive_index] = limit_overrides[name][0]
                 builder.joint_limit_upper[drive_index] = limit_overrides[name][1]
@@ -2498,7 +2503,7 @@ class NewtonSession:
             }
             initial = min(upper, max(lower, float(home_positions.get(name, builder.joint_q[index]))))
             builder.joint_q[index] = initial
-            builder.joint_target_q[drive_index] = initial
+            builder.joint_target_q[index] = initial
             override = self.joint_drive_overrides.get(name, {})
             stiffness = float(override.get("stiffness", self.joint_stiffness))
             damping = float(override.get("damping", self.joint_damping))
@@ -2972,21 +2977,18 @@ class NewtonSession:
             )
         else:
             raise ValueError(f"unsupported rigid solver: {solver_name!r}")
-        self.collision_pipeline = None
-        if requested_broad_phase == "explicit":
-            self.contacts = self.model.contacts()
-        else:
+        collision_options: dict[str, Any] = {"broad_phase": requested_broad_phase}
+        if requested_broad_phase != "explicit":
             contact_budget = int(
                 self.scene.get("rigid_contact_max_per_world")
                 or self.model.rigid_contact_max
             )
-            self.collision_pipeline = newton.CollisionPipeline(
-                self.model,
-                broad_phase=requested_broad_phase,
+            collision_options.update(
                 shape_pairs_max=contact_budget,
                 rigid_contact_max=contact_budget,
             )
-            self.contacts = self.collision_pipeline.contacts()
+        self.collision_pipeline = newton.CollisionPipeline(self.model, **collision_options)
+        self.contacts = self.collision_pipeline.contacts()
         self.control = self.model.control()
         self._new_states(newton, wp)
         if asset_path and asset_format in {"urdf", "mjcf"}:
@@ -3133,8 +3135,8 @@ class NewtonSession:
             self.frame_count = 0
             return
         targets = self.model.joint_target_q.numpy().tolist()
-        for name, drive_index in self.joint_drive_indices.items():
-            targets[drive_index] = self.applied[name]
+        for name, target_index in self.joint_target_indices.items():
+            targets[target_index] = self.applied[name]
         self.control.joint_target_q.assign(
             wp.array(targets, dtype=wp.float32, device=self.model.device)
         )
@@ -3168,8 +3170,8 @@ class NewtonSession:
                 lower, upper = self.joint_limits[name]
                 value = min(upper, max(lower, value))
                 self.applied[name] = value
-                drive_index = self.joint_drive_indices.get(name, index)
-                target_array[drive_index] = value
+                target_index = self.joint_target_indices.get(name, index)
+                target_array[target_index] = value
         self.control.joint_target_q.assign(
             wp.array(target_array, dtype=wp.float32, device=self.model.device)
         )
@@ -3237,10 +3239,7 @@ class NewtonSession:
                             # pass. In external-contact mode Newton generates
                             # triangle-mesh contacts and MJWarp consumes them.
                             if not self.solver_uses_native_contacts:
-                                if self.collision_pipeline is None:
-                                    self.model.collide(self.state_0, self.contacts)
-                                else:
-                                    self.collision_pipeline.collide(self.state_0, self.contacts)
+                                self.collision_pipeline.collide(self.state_0, self.contacts)
                             self.solver.step(
                                 self.state_0, self.state_1, self.control, self.contacts, step_dt
                             )
